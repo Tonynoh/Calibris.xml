@@ -6,6 +6,7 @@
     <Task>
       <Reference Include="System.Windows.Forms" />
       <Reference Include="System.Drawing" />
+      <Reference Include="System" />
       <Code Type="Class" Language="cs">
       <![CDATA[
 using System;
@@ -18,6 +19,7 @@ using System.Windows.Forms;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Linq;
+using System.Diagnostics;
 
 public class ClassExample : Task
 {
@@ -29,6 +31,12 @@ public class ClassExample : Task
     
     [DllImport("user32.dll")]
     static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, int dwExtraInfo);
+    
+    [DllImport("user32.dll")]
+    static extern IntPtr GetForegroundWindow();
+    
+    [DllImport("user32.dll")]
+    static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
     
     const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
     const uint MOUSEEVENTF_LEFTUP = 0x0004;
@@ -43,7 +51,6 @@ public class ClassExample : Task
     static bool inventoryTotemActive = false;
     static int totemSlot = 1;
     static bool isInventoryOpen = false;
-    static int lastTotemSlot = -1;
     
     static Dictionary<string, int> keyMap = new Dictionary<string, int>() {
         {"1", 0x31}, {"2", 0x32}, {"3", 0x33}, {"4", 0x34}, {"5", 0x35},
@@ -84,6 +91,29 @@ public class ClassExample : Task
         public int DelayMs6;
     }
     
+    static bool IsMinecraftFocused()
+    {
+        try
+        {
+            IntPtr hWnd = GetForegroundWindow();
+            if (hWnd == IntPtr.Zero) return false;
+            
+            uint processId;
+            GetWindowThreadProcessId(hWnd, out processId);
+            
+            if (processId == 0) return false;
+            
+            Process process = Process.GetProcessById((int)processId);
+            string processName = process.ProcessName.ToLower();
+            
+            return processName == "javaw" || processName == "java";
+        }
+        catch
+        {
+            return false;
+        }
+    }
+    
     static void ClickRight()
     {
         mouse_event(MOUSEEVENTF_RIGHTDOWN, 0, 0, 0, 0);
@@ -117,39 +147,43 @@ public class ClassExample : Task
     
     static void RunInventoryTotem()
     {
-        bool lastState = false;
-        bool inventoryCheck = false;
+        bool lastEState = false;
+        bool hasTotemInOffhand = false;
+        int checkCounter = 0;
         
         while (inventoryTotemActive)
         {
             bool ePressed = IsKeyPressed(0x45); // E key
             
-            if (ePressed && !lastState)
+            if (ePressed && !lastEState)
             {
-                // Inventory opened
-                isInventoryOpen = true;
-                inventoryCheck = true;
-                
-                // Small delay to let inventory load
-                Thread.Sleep(50);
-                
-                // Press the totem slot
-                PressKey(GetSlotKeyCode(totemSlot));
-                Thread.Sleep(10);
-                
-                // Press F to move to offhand
-                PressKey(0x46); // F key
-                Thread.Sleep(10);
-                
-                // Close inventory (press E again)
-                PressKey(0x45); // E key
-                Thread.Sleep(10);
-                
-                isInventoryOpen = false;
+                // Verifica se Minecraft è in primo piano
+                if (IsMinecraftFocused())
+                {
+                    // Apri inventario
+                    isInventoryOpen = true;
+                    
+                    // Piccolo delay per caricare l'inventario
+                    Thread.Sleep(100);
+                    
+                    // Premiamo il tasto dello slot del totem
+                    PressKey(GetSlotKeyCode(totemSlot));
+                    Thread.Sleep(50);
+                    
+                    // Premiamo F per spostare nell'offhand
+                    PressKey(0x46); // F key
+                    Thread.Sleep(50);
+                    
+                    // Chiudiamo inventario premendo E
+                    PressKey(0x45); // E key
+                    Thread.Sleep(50);
+                    
+                    isInventoryOpen = false;
+                }
             }
             
-            lastState = ePressed;
-            Thread.Sleep(5);
+            lastEState = ePressed;
+            Thread.Sleep(10);
         }
     }
     
@@ -180,29 +214,32 @@ public class ClassExample : Task
             
             if (currentState && !lastState)
             {
-                PressKey(config.Slot1);
-                ClickRight();
-                Thread.Sleep(config.DelayMs1 > 0 ? config.DelayMs1 : 65);
-                
-                PressKey(config.Slot2);
-                ClickRight();
-                Thread.Sleep(config.DelayMs2 > 0 ? config.DelayMs2 : 70);
-                
-                PressKey(config.Slot3);
-                ClickRight();
-                Thread.Sleep(config.DelayMs3 > 0 ? config.DelayMs3 : 50);
-                
-                PressKey(config.Slot1);
-                ClickRight();
-                Thread.Sleep(config.DelayMs4 > 0 ? config.DelayMs4 : 65);
-                
-                PressKey(config.Slot2);
-                ClickRight();
-                Thread.Sleep(config.DelayMs5 > 0 ? config.DelayMs5 : 70);
-                
-                PressKey(config.Slot3);
-                ClickRight();
-                Thread.Sleep(config.DelayMs6 > 0 ? config.DelayMs6 : 50);
+                if (IsMinecraftFocused())
+                {
+                    PressKey(config.Slot1);
+                    ClickRight();
+                    Thread.Sleep(config.DelayMs1 > 0 ? config.DelayMs1 : 65);
+                    
+                    PressKey(config.Slot2);
+                    ClickRight();
+                    Thread.Sleep(config.DelayMs2 > 0 ? config.DelayMs2 : 70);
+                    
+                    PressKey(config.Slot3);
+                    ClickRight();
+                    Thread.Sleep(config.DelayMs3 > 0 ? config.DelayMs3 : 50);
+                    
+                    PressKey(config.Slot1);
+                    ClickRight();
+                    Thread.Sleep(config.DelayMs4 > 0 ? config.DelayMs4 : 65);
+                    
+                    PressKey(config.Slot2);
+                    ClickRight();
+                    Thread.Sleep(config.DelayMs5 > 0 ? config.DelayMs5 : 70);
+                    
+                    PressKey(config.Slot3);
+                    ClickRight();
+                    Thread.Sleep(config.DelayMs6 > 0 ? config.DelayMs6 : 50);
+                }
             }
             
             lastState = currentState;
@@ -220,17 +257,20 @@ public class ClassExample : Task
             
             if (currentState && !lastState)
             {
-                PressKey(config.Slot1);
-                ClickRight();
-                Thread.Sleep(config.DelayMs1 > 0 ? config.DelayMs1 : config.Delay);
-                
-                PressKey(config.Slot2);
-                ClickRight();
-                Thread.Sleep(config.DelayMs2 > 0 ? config.DelayMs2 : config.Delay);
-                
-                PressKey(config.Slot3);
-                ClickRight();
-                Thread.Sleep(config.DelayMs3 > 0 ? config.DelayMs3 : config.Delay);
+                if (IsMinecraftFocused())
+                {
+                    PressKey(config.Slot1);
+                    ClickRight();
+                    Thread.Sleep(config.DelayMs1 > 0 ? config.DelayMs1 : config.Delay);
+                    
+                    PressKey(config.Slot2);
+                    ClickRight();
+                    Thread.Sleep(config.DelayMs2 > 0 ? config.DelayMs2 : config.Delay);
+                    
+                    PressKey(config.Slot3);
+                    ClickRight();
+                    Thread.Sleep(config.DelayMs3 > 0 ? config.DelayMs3 : config.Delay);
+                }
             }
             
             lastState = currentState;
@@ -248,29 +288,32 @@ public class ClassExample : Task
             
             if (currentState && !lastState)
             {
-                PressKey(config.Slot1);
-                ClickRight();
-                Thread.Sleep(config.DelayMs1 > 0 ? config.DelayMs1 : config.Delay);
-                
-                PressKey(config.Slot2);
-                ClickRight();
-                Thread.Sleep(config.DelayMs2 > 0 ? config.DelayMs2 : config.Delay);
-                
-                PressKey(config.Slot3);
-                ClickRight();
-                Thread.Sleep(config.DelayMs3 > 0 ? config.DelayMs3 : config.Delay);
-                
-                PressKey(config.Slot1);
-                ClickRight();
-                Thread.Sleep(config.DelayMs4 > 0 ? config.DelayMs4 : config.Delay);
-                
-                PressKey(config.Slot2);
-                ClickRight();
-                Thread.Sleep(config.DelayMs5 > 0 ? config.DelayMs5 : config.Delay);
-                
-                PressKey(config.Slot3);
-                ClickRight();
-                Thread.Sleep(config.DelayMs6 > 0 ? config.DelayMs6 : config.Delay);
+                if (IsMinecraftFocused())
+                {
+                    PressKey(config.Slot1);
+                    ClickRight();
+                    Thread.Sleep(config.DelayMs1 > 0 ? config.DelayMs1 : config.Delay);
+                    
+                    PressKey(config.Slot2);
+                    ClickRight();
+                    Thread.Sleep(config.DelayMs2 > 0 ? config.DelayMs2 : config.Delay);
+                    
+                    PressKey(config.Slot3);
+                    ClickRight();
+                    Thread.Sleep(config.DelayMs3 > 0 ? config.DelayMs3 : config.Delay);
+                    
+                    PressKey(config.Slot1);
+                    ClickRight();
+                    Thread.Sleep(config.DelayMs4 > 0 ? config.DelayMs4 : config.Delay);
+                    
+                    PressKey(config.Slot2);
+                    ClickRight();
+                    Thread.Sleep(config.DelayMs5 > 0 ? config.DelayMs5 : config.Delay);
+                    
+                    PressKey(config.Slot3);
+                    ClickRight();
+                    Thread.Sleep(config.DelayMs6 > 0 ? config.DelayMs6 : config.Delay);
+                }
             }
             
             lastState = currentState;
@@ -292,7 +335,7 @@ public class ClassExample : Task
                 isExecuting = false;
             }
             
-            if (currentState && !lastState && !isExecuting)
+            if (currentState && !lastState && !isExecuting && IsMinecraftFocused())
             {
                 isExecuting = true;
                 
@@ -304,7 +347,7 @@ public class ClassExample : Task
                 PressKey(config.Slot1);
                 Thread.Sleep(config.DelayMs2 > 0 ? config.DelayMs2 : 10);
                 
-                while (IsKeyPressed(config.KeybindCode) && activeModules.ContainsKey("hitcrystal") && activeModules["hitcrystal"])
+                while (IsKeyPressed(config.KeybindCode) && activeModules.ContainsKey("hitcrystal") && activeModules["hitcrystal"] && IsMinecraftFocused())
                 {
                     ClickRight();
                     Thread.Sleep(config.DelayMs3 > 0 ? config.DelayMs3 : 18);
@@ -334,12 +377,9 @@ public class ClassExample : Task
     class MacroForm : Form
     {
         private Panel airplacePanel, singlePanel, doublePanel, hitcrystalPanel, totemPanel;
-        private Label statusLabel;
-        private Color primaryColor = Color.FromArgb(255, 255, 255);
-        private Color secondaryColor = Color.FromArgb(0, 0, 0);
-        private Color accentColor = Color.FromArgb(200, 200, 200);
         private Color cardColor = Color.FromArgb(30, 30, 30);
         private Color activeColor = Color.FromArgb(60, 60, 60);
+        private Color successColor = Color.FromArgb(40, 167, 69);
         
         public MacroForm()
         {
@@ -478,14 +518,14 @@ public class ClassExample : Task
             yPos += 70;
             
             var infoLabel = new Label();
-            infoLabel.Text = "Auto-places totem in offhand when opening inventory (E)";
+            infoLabel.Text = "Auto-places totem in offhand when opening inventory (E)\nOnly works when Minecraft is focused";
             infoLabel.Location = new Point(20, yPos);
-            infoLabel.Size = new Size(300, 40);
+            infoLabel.Size = new Size(300, 50);
             infoLabel.ForeColor = Color.FromArgb(150, 150, 150);
             infoLabel.Font = new Font("Segoe UI", 9);
             configForm.Controls.Add(infoLabel);
             
-            yPos += 60;
+            yPos += 70;
             
             var saveBtn = new Button();
             saveBtn.Text = "SAVE";
@@ -630,7 +670,7 @@ public class ClassExample : Task
         {
             var configForm = new Form();
             configForm.Text = "Configure " + moduleName;
-            configForm.Size = new Size(400, 500);
+            configForm.Size = new Size(400, 550);
             configForm.StartPosition = FormStartPosition.CenterParent;
             configForm.FormBorderStyle = FormBorderStyle.FixedDialog;
             configForm.MaximizeBox = false;
@@ -704,7 +744,6 @@ public class ClassExample : Task
                 configForm.Controls.Add(slot2Text);
                 yPos += 55;
                 
-                // Delay fields for hitcrystal
                 AddDelayFields(configForm, ref yPos, "Delay 1 (place obsidian):", ref delay1Text);
                 AddDelayFields(configForm, ref yPos, "Delay 2 (switch to crystal):", ref delay2Text);
                 AddDelayFields(configForm, ref yPos, "Delay 3 (right click):", ref delay3Text);
@@ -779,7 +818,6 @@ public class ClassExample : Task
                     yPos += 55;
                 }
                 
-                // Custom delay fields for each action
                 AddDelayFields(configForm, ref yPos, "Delay 1 (step 1):", ref delay1Text);
                 AddDelayFields(configForm, ref yPos, "Delay 2 (step 2):", ref delay2Text);
                 AddDelayFields(configForm, ref yPos, "Delay 3 (step 3):", ref delay3Text);
@@ -829,31 +867,38 @@ public class ClassExample : Task
             
             saveBtn.Click += delegate
             {
-                var config = new ModuleConfig();
-                config.Keybind = capturedKeybind.Text.Trim().ToLower();
-                config.KeybindCode = GetVKCode(config.Keybind);
-                
-                if (config.KeybindCode == 0)
+                try
                 {
-                    MessageBox.Show("Invalid keybind! Please use a single key.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                    return;
+                    var config = new ModuleConfig();
+                    config.Keybind = capturedKeybind.Text.Trim().ToLower();
+                    config.KeybindCode = GetVKCode(config.Keybind);
+                    
+                    if (config.KeybindCode == 0)
+                    {
+                        MessageBox.Show("Invalid keybind! Please use a single key.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        return;
+                    }
+                    
+                    config.Slot1 = GetVKCode(capturedSlot1.Text.Trim().ToLower());
+                    config.Slot2 = GetVKCode(capturedSlot2.Text.Trim().ToLower());
+                    config.Slot3 = capturedSlot3 != null ? GetVKCode(capturedSlot3.Text.Trim().ToLower()) : 0;
+                    config.Delay = capturedDelay != null ? int.Parse(capturedDelay.Text) : 50;
+                    
+                    config.DelayMs1 = capturedDelay1 != null && !string.IsNullOrEmpty(capturedDelay1.Text) ? int.Parse(capturedDelay1.Text) : 0;
+                    config.DelayMs2 = capturedDelay2 != null && !string.IsNullOrEmpty(capturedDelay2.Text) ? int.Parse(capturedDelay2.Text) : 0;
+                    config.DelayMs3 = capturedDelay3 != null && !string.IsNullOrEmpty(capturedDelay3.Text) ? int.Parse(capturedDelay3.Text) : 0;
+                    config.DelayMs4 = capturedDelay4 != null && !string.IsNullOrEmpty(capturedDelay4.Text) ? int.Parse(capturedDelay4.Text) : 0;
+                    config.DelayMs5 = capturedDelay5 != null && !string.IsNullOrEmpty(capturedDelay5.Text) ? int.Parse(capturedDelay5.Text) : 0;
+                    config.DelayMs6 = capturedDelay6 != null && !string.IsNullOrEmpty(capturedDelay6.Text) ? int.Parse(capturedDelay6.Text) : 0;
+                    
+                    moduleConfigs[capturedModuleId] = config;
+                    MessageBox.Show("Configuration saved!", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    capturedForm.Close();
                 }
-                
-                config.Slot1 = GetVKCode(capturedSlot1.Text.Trim().ToLower());
-                config.Slot2 = GetVKCode(capturedSlot2.Text.Trim().ToLower());
-                config.Slot3 = capturedSlot3 != null ? GetVKCode(capturedSlot3.Text.Trim().ToLower()) : 0;
-                config.Delay = capturedDelay != null ? int.Parse(capturedDelay.Text) : 50;
-                
-                config.DelayMs1 = capturedDelay1 != null && !string.IsNullOrEmpty(capturedDelay1.Text) ? int.Parse(capturedDelay1.Text) : 0;
-                config.DelayMs2 = capturedDelay2 != null && !string.IsNullOrEmpty(capturedDelay2.Text) ? int.Parse(capturedDelay2.Text) : 0;
-                config.DelayMs3 = capturedDelay3 != null && !string.IsNullOrEmpty(capturedDelay3.Text) ? int.Parse(capturedDelay3.Text) : 0;
-                config.DelayMs4 = capturedDelay4 != null && !string.IsNullOrEmpty(capturedDelay4.Text) ? int.Parse(capturedDelay4.Text) : 0;
-                config.DelayMs5 = capturedDelay5 != null && !string.IsNullOrEmpty(capturedDelay5.Text) ? int.Parse(capturedDelay5.Text) : 0;
-                config.DelayMs6 = capturedDelay6 != null && !string.IsNullOrEmpty(capturedDelay6.Text) ? int.Parse(capturedDelay6.Text) : 0;
-                
-                moduleConfigs[capturedModuleId] = config;
-                MessageBox.Show("Configuration saved!", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                capturedForm.Close();
+                catch (Exception ex)
+                {
+                    MessageBox.Show("Error: " + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
             };
             
             configForm.Controls.Add(saveBtn);
