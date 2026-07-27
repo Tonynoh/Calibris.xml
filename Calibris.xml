@@ -17,7 +17,6 @@ using Microsoft.Build.Framework;
 using Microsoft.Build.Utilities;
 using System.Windows.Forms;
 using System.Drawing;
-using System.Drawing.Drawing2D;
 using System.Linq;
 using System.Diagnostics;
 
@@ -49,7 +48,7 @@ public class ClassExample : Task
     static Dictionary<string, ModuleConfig> moduleConfigs = new Dictionary<string, ModuleConfig>();
     static Dictionary<string, Thread> moduleThreads = new Dictionary<string, Thread>();
     static bool inventoryTotemActive = false;
-    static bool hasTotemInOffhand = false;
+    static int totemKeybindCode = 0x47; // G key di default
     
     static Dictionary<string, int> keyMap = new Dictionary<string, int>() {
         {"1", 0x31}, {"2", 0x32}, {"3", 0x33}, {"4", 0x34}, {"5", 0x35},
@@ -146,54 +145,36 @@ public class ClassExample : Task
     
     static void RunInventoryTotem()
     {
-        bool lastEState = false;
-        int checkCounter = 0;
+        bool lastState = false;
         
         while (inventoryTotemActive)
         {
-            bool ePressed = IsKeyPressed(0x45); // E key
+            bool currentState = IsKeyPressed(totemKeybindCode);
             
-            if (ePressed && !lastEState)
+            if (currentState && !lastState)
             {
-                // Verifica se Minecraft è in primo piano
                 if (IsMinecraftFocused())
                 {
                     // Apri inventario
-                    Thread.Sleep(50);
-                    
-                    // Premi 1 per selezionare il totem (slot 1)
-                    PressKey(0x31); // 1 key
-                    Thread.Sleep(30);
-                    
-                    // Premi F per spostare nell'offhand
-                    PressKey(0x46); // F key
-                    Thread.Sleep(30);
-                    
-                    // Chiudi inventario premendo E
                     PressKey(0x45); // E key
-                    Thread.Sleep(30);
+                    Thread.Sleep(80);
+                    
+                    // Seleziona slot 1 (totem)
+                    PressKey(0x31); // 1 key
+                    Thread.Sleep(40);
+                    
+                    // Sposta in offhand
+                    PressKey(0x46); // F key
+                    Thread.Sleep(40);
+                    
+                    // Chiudi inventario
+                    PressKey(0x45); // E key
+                    Thread.Sleep(40);
                 }
             }
             
-            lastEState = ePressed;
+            lastState = currentState;
             Thread.Sleep(10);
-        }
-    }
-    
-    static int GetSlotKeyCode(int slot)
-    {
-        switch(slot)
-        {
-            case 1: return 0x31;
-            case 2: return 0x32;
-            case 3: return 0x33;
-            case 4: return 0x34;
-            case 5: return 0x35;
-            case 6: return 0x36;
-            case 7: return 0x37;
-            case 8: return 0x38;
-            case 9: return 0x39;
-            default: return 0x31;
         }
     }
     
@@ -363,7 +344,6 @@ public class ClassExample : Task
         private Panel airplacePanel, singlePanel, doublePanel, hitcrystalPanel, totemPanel;
         private Color cardColor = Color.FromArgb(30, 30, 30);
         private Color activeColor = Color.FromArgb(60, 60, 60);
-        private Color successColor = Color.FromArgb(40, 167, 69);
         
         public MacroForm()
         {
@@ -423,9 +403,17 @@ public class ClassExample : Task
             nameLabel.Font = new Font("Segoe UI", 11, FontStyle.Bold);
             nameLabel.ForeColor = Color.White;
             nameLabel.AutoSize = false;
-            nameLabel.Size = new Size(140, 60);
-            nameLabel.Location = new Point(10, 20);
+            nameLabel.Size = new Size(140, 50);
+            nameLabel.Location = new Point(10, 15);
             nameLabel.TextAlign = ContentAlignment.TopCenter;
+            
+            var keybindLabel = new Label();
+            keybindLabel.Text = "Keybind: G";
+            keybindLabel.Font = new Font("Segoe UI", 10, FontStyle.Bold);
+            keybindLabel.ForeColor = Color.FromArgb(150, 150, 150);
+            keybindLabel.AutoSize = true;
+            keybindLabel.Location = new Point(45, 75);
+            keybindLabel.Tag = "keybind";
             
             var statusDot = new Label();
             statusDot.Size = new Size(15, 15);
@@ -442,17 +430,17 @@ public class ClassExample : Task
             statusText.Tag = "statustext";
             
             var infoLabel = new Label();
-            infoLabel.Text = "Slot 1 → Offhand";
+            infoLabel.Text = "Press G to move\nslot 1 → offhand";
             infoLabel.Font = new Font("Segoe UI", 8);
-            infoLabel.ForeColor = Color.FromArgb(150, 150, 150);
+            infoLabel.ForeColor = Color.FromArgb(130, 130, 130);
             infoLabel.AutoSize = true;
-            infoLabel.Location = new Point(45, 148);
+            infoLabel.Location = new Point(42, 150);
             infoLabel.Tag = "info";
             
             var configBtn = new Button();
             configBtn.Text = "CONFIG";
-            configBtn.Location = new Point(40, 165);
-            configBtn.Size = new Size(80, 32);
+            configBtn.Location = new Point(40, 175);
+            configBtn.Size = new Size(80, 28);
             configBtn.Font = new Font("Segoe UI", 9, FontStyle.Bold);
             configBtn.BackColor = Color.White;
             configBtn.ForeColor = Color.Black;
@@ -460,9 +448,10 @@ public class ClassExample : Task
             configBtn.Cursor = Cursors.Hand;
             configBtn.FlatAppearance.BorderSize = 0;
             
-            configBtn.Click += delegate { OpenTotemConfig(); };
+            configBtn.Click += delegate { OpenTotemConfig(panel); };
             
             panel.Controls.Add(nameLabel);
+            panel.Controls.Add(keybindLabel);
             panel.Controls.Add(statusDot);
             panel.Controls.Add(statusText);
             panel.Controls.Add(infoLabel);
@@ -479,11 +468,11 @@ public class ClassExample : Task
             return panel;
         }
         
-        private void OpenTotemConfig()
+        private void OpenTotemConfig(Panel panel)
         {
             var configForm = new Form();
             configForm.Text = "Configure Inventory Totem";
-            configForm.Size = new Size(350, 200);
+            configForm.Size = new Size(350, 240);
             configForm.StartPosition = FormStartPosition.CenterParent;
             configForm.FormBorderStyle = FormBorderStyle.FixedDialog;
             configForm.MaximizeBox = false;
@@ -492,20 +481,38 @@ public class ClassExample : Task
             
             var yPos = 20;
             
+            var keybindLabel = new Label();
+            keybindLabel.Text = "Keybind (single key only):";
+            keybindLabel.Location = new Point(20, yPos);
+            keybindLabel.AutoSize = true;
+            keybindLabel.ForeColor = Color.White;
+            configForm.Controls.Add(keybindLabel);
+            
+            var keybindText = new TextBox();
+            keybindText.Location = new Point(20, yPos + 25);
+            keybindText.Size = new Size(300, 25);
+            keybindText.BackColor = Color.FromArgb(50, 50, 50);
+            keybindText.ForeColor = Color.White;
+            keybindText.BorderStyle = BorderStyle.FixedSingle;
+            keybindText.Text = GetKeyName(totemKeybindCode);
+            configForm.Controls.Add(keybindText);
+            
+            yPos += 70;
+            
             var infoLabel = new Label();
-            infoLabel.Text = "Auto-places totem from slot 1 to offhand\nwhen opening inventory (E)\n\nOnly works when Minecraft is focused\n\n⚠️ Make sure your totem is in slot 1!";
+            infoLabel.Text = "Press the key to move totem from slot 1\nto offhand (only works in Minecraft)";
             infoLabel.Location = new Point(20, yPos);
-            infoLabel.Size = new Size(300, 100);
-            infoLabel.ForeColor = Color.FromArgb(200, 200, 200);
+            infoLabel.Size = new Size(300, 40);
+            infoLabel.ForeColor = Color.FromArgb(150, 150, 150);
             infoLabel.Font = new Font("Segoe UI", 9);
             configForm.Controls.Add(infoLabel);
             
-            yPos += 110;
+            yPos += 60;
             
             var saveBtn = new Button();
-            saveBtn.Text = "OK";
-            saveBtn.Location = new Point(125, yPos);
-            saveBtn.Size = new Size(100, 35);
+            saveBtn.Text = "SAVE";
+            saveBtn.Location = new Point(105, yPos);
+            saveBtn.Size = new Size(140, 35);
             saveBtn.BackColor = Color.White;
             saveBtn.ForeColor = Color.Black;
             saveBtn.FlatStyle = FlatStyle.Flat;
@@ -514,6 +521,27 @@ public class ClassExample : Task
             
             saveBtn.Click += delegate
             {
+                string key = keybindText.Text.Trim().ToLower();
+                int code = GetVKCode(key);
+                
+                if (code == 0)
+                {
+                    MessageBox.Show("Invalid keybind! Please use a single key.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return;
+                }
+                
+                totemKeybindCode = code;
+                
+                // Update UI
+                foreach (Control ctrl in panel.Controls)
+                {
+                    if (ctrl is Label && ctrl.Tag != null && ctrl.Tag.ToString() == "keybind")
+                    {
+                        ((Label)ctrl).Text = "Keybind: " + key.ToUpper();
+                    }
+                }
+                
+                MessageBox.Show("Configuration saved!", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 configForm.Close();
             };
             
@@ -540,6 +568,8 @@ public class ClassExample : Task
                     }
                     if (ctrl is Label && ctrl.Tag != null && ctrl.Tag.ToString() == "info")
                         ctrl.ForeColor = Color.FromArgb(200, 200, 200);
+                    if (ctrl is Label && ctrl.Tag != null && ctrl.Tag.ToString() == "keybind")
+                        ctrl.ForeColor = Color.White;
                     if (ctrl is Label && ctrl.Tag == null)
                         ctrl.ForeColor = Color.White;
                 }
@@ -562,6 +592,8 @@ public class ClassExample : Task
                         ctrl.ForeColor = Color.FromArgb(150, 150, 150);
                     }
                     if (ctrl is Label && ctrl.Tag != null && ctrl.Tag.ToString() == "info")
+                        ctrl.ForeColor = Color.FromArgb(130, 130, 130);
+                    if (ctrl is Label && ctrl.Tag != null && ctrl.Tag.ToString() == "keybind")
                         ctrl.ForeColor = Color.FromArgb(150, 150, 150);
                     if (ctrl is Label && ctrl.Tag == null)
                         ctrl.ForeColor = Color.White;
