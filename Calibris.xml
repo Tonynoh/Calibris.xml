@@ -49,6 +49,7 @@ public class ClassExample : Task
     static Dictionary<string, Thread> moduleThreads = new Dictionary<string, Thread>();
     static bool inventoryTotemActive = false;
     static int totemKeybindCode = 0x47; // G key di default
+    static bool totemPlaced = false;
     
     static Dictionary<string, int> keyMap = new Dictionary<string, int>() {
         {"1", 0x31}, {"2", 0x32}, {"3", 0x33}, {"4", 0x34}, {"5", 0x35},
@@ -146,6 +147,7 @@ public class ClassExample : Task
     static void RunInventoryTotem()
     {
         bool lastState = false;
+        bool inventoryOpen = false;
         
         while (inventoryTotemActive)
         {
@@ -155,21 +157,22 @@ public class ClassExample : Task
             {
                 if (IsMinecraftFocused())
                 {
-                    // Apri inventario
-                    PressKey(0x45); // E key
-                    Thread.Sleep(80);
+                    // Apri inventario con E
+                    PressKey(0x45); // E
+                    Thread.Sleep(60);
+                    inventoryOpen = true;
                     
-                    // Seleziona slot 1 (totem)
-                    PressKey(0x31); // 1 key
-                    Thread.Sleep(40);
-                    
-                    // Sposta in offhand
-                    PressKey(0x46); // F key
-                    Thread.Sleep(40);
+                    // Seleziona slot 1 e premi F per spostare in offhand
+                    // Se l'offhand è già occupata, F non fa nulla
+                    PressKey(0x31); // 1
+                    Thread.Sleep(30);
+                    PressKey(0x46); // F
+                    Thread.Sleep(30);
                     
                     // Chiudi inventario
-                    PressKey(0x45); // E key
-                    Thread.Sleep(40);
+                    PressKey(0x45); // E
+                    Thread.Sleep(30);
+                    inventoryOpen = false;
                 }
             }
             
@@ -430,11 +433,11 @@ public class ClassExample : Task
             statusText.Tag = "statustext";
             
             var infoLabel = new Label();
-            infoLabel.Text = "Press G to move\nslot 1 → offhand";
+            infoLabel.Text = "Press G to move slot 1\n→ offhand (if empty)";
             infoLabel.Font = new Font("Segoe UI", 8);
             infoLabel.ForeColor = Color.FromArgb(130, 130, 130);
             infoLabel.AutoSize = true;
-            infoLabel.Location = new Point(42, 150);
+            infoLabel.Location = new Point(35, 150);
             infoLabel.Tag = "info";
             
             var configBtn = new Button();
@@ -500,7 +503,7 @@ public class ClassExample : Task
             yPos += 70;
             
             var infoLabel = new Label();
-            infoLabel.Text = "Press the key to move totem from slot 1\nto offhand (only works in Minecraft)";
+            infoLabel.Text = "Opens inventory → selects slot 1 → presses F\nOnly works if offhand is empty";
             infoLabel.Location = new Point(20, yPos);
             infoLabel.Size = new Size(300, 40);
             infoLabel.ForeColor = Color.FromArgb(150, 150, 150);
@@ -532,7 +535,6 @@ public class ClassExample : Task
                 
                 totemKeybindCode = code;
                 
-                // Update UI
                 foreach (Control ctrl in panel.Controls)
                 {
                     if (ctrl is Label && ctrl.Tag != null && ctrl.Tag.ToString() == "keybind")
