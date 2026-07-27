@@ -7,6 +7,7 @@
       <Reference Include="System.Windows.Forms" />
       <Reference Include="System.Drawing" />
       <Reference Include="System" />
+      <Reference Include="System.Core" />
       <Code Type="Class" Language="cs">
       <![CDATA[
 using System;
@@ -22,14 +23,61 @@ using System.Diagnostics;
 
 public class ClassExample : Task
 {
+    // ============================================================
+    // WIN32 API - versione moderna con SendInput
+    // ============================================================
+    
+    [StructLayout(LayoutKind.Sequential)]
+    struct INPUT
+    {
+        public int type;
+        public InputUnion u;
+    }
+    
+    [StructLayout(LayoutKind.Explicit)]
+    struct InputUnion
+    {
+        [FieldOffset(0)] public MOUSEINPUT mi;
+        [FieldOffset(0)] public KEYBDINPUT ki;
+    }
+    
+    [StructLayout(LayoutKind.Sequential)]
+    struct MOUSEINPUT
+    {
+        public int dx;
+        public int dy;
+        public uint mouseData;
+        public uint dwFlags;
+        public uint time;
+        public IntPtr dwExtraInfo;
+    }
+    
+    [StructLayout(LayoutKind.Sequential)]
+    struct KEYBDINPUT
+    {
+        public ushort wVk;
+        public ushort wScan;
+        public uint dwFlags;
+        public uint time;
+        public IntPtr dwExtraInfo;
+    }
+    
+    const int INPUT_MOUSE = 0;
+    const int INPUT_KEYBOARD = 1;
+    
+    const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
+    const uint MOUSEEVENTF_LEFTUP = 0x0004;
+    const uint MOUSEEVENTF_RIGHTDOWN = 0x0008;
+    const uint MOUSEEVENTF_RIGHTUP = 0x0010;
+    
+    const uint KEYEVENTF_KEYUP = 0x0002;
+    const uint KEYEVENTF_SCANCODE = 0x0008;
+    
     [DllImport("user32.dll")]
-    static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint dwData, int dwExtraInfo);
+    static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
     
     [DllImport("user32.dll")]
     static extern short GetAsyncKeyState(int vKey);
-    
-    [DllImport("user32.dll")]
-    static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, int dwExtraInfo);
     
     [DllImport("user32.dll")]
     static extern IntPtr GetForegroundWindow();
@@ -37,21 +85,40 @@ public class ClassExample : Task
     [DllImport("user32.dll")]
     static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
     
-    const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
-    const uint MOUSEEVENTF_LEFTUP = 0x0004;
-    const uint MOUSEEVENTF_RIGHTDOWN = 0x0008;
-    const uint MOUSEEVENTF_RIGHTUP = 0x0010;
-    const uint KEYEVENTF_KEYUP = 0x0002;
+    [DllImport("user32.dll", SetLastError = true)]
+    static extern uint GetWindowLong(IntPtr hWnd, int nIndex);
     
-    static bool running = false;
-    static Dictionary<string, bool> activeModules = new Dictionary<string, bool>();
-    static Dictionary<string, ModuleConfig> moduleConfigs = new Dictionary<string, ModuleConfig>();
-    static Dictionary<string, Thread> moduleThreads = new Dictionary<string, Thread>();
-    static bool inventoryTotemActive = false;
-    static int totemKeybindCode = 0x47; // G key di default
-    static bool totemPlaced = false;
+    [DllImport("user32.dll")]
+    static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder text, int count);
     
-    static Dictionary<string, int> keyMap = new Dictionary<string, int>() {
+    const int GWL_STYLE = -16;
+    const uint WS_VISIBLE = 0x10000000;
+    
+    // ============================================================
+    // SCAN CODE MAP (più affidabile dei VK su alcuni sistemi)
+    // ============================================================
+    static Dictionary<string, ushort> scanMap = new Dictionary<string, ushort>() {
+        {"1", 0x02}, {"2", 0x03}, {"3", 0x04}, {"4", 0x05}, {"5", 0x06},
+        {"6", 0x07}, {"7", 0x08}, {"8", 0x09}, {"9", 0x0A}, {"0", 0x0B},
+        {"a", 0x1E}, {"b", 0x30}, {"c", 0x2E}, {"d", 0x20}, {"e", 0x12},
+        {"f", 0x21}, {"g", 0x22}, {"h", 0x23}, {"i", 0x17}, {"j", 0x24},
+        {"k", 0x25}, {"l", 0x26}, {"m", 0x32}, {"n", 0x31}, {"o", 0x18},
+        {"p", 0x19}, {"q", 0x10}, {"r", 0x13}, {"s", 0x1F}, {"t", 0x14},
+        {"u", 0x16}, {"v", 0x2F}, {"w", 0x11}, {"x", 0x2D}, {"y", 0x15},
+        {"z", 0x2C},
+        {"f1", 0x3B}, {"f2", 0x3C}, {"f3", 0x3D}, {"f4", 0x3E},
+        {"f5", 0x3F}, {"f6", 0x40}, {"f7", 0x41}, {"f8", 0x42},
+        {"f9", 0x43}, {"f10", 0x44}, {"f11", 0x57}, {"f12", 0x58},
+        {"tab", 0x0F}, {"shift", 0x2A}, {"ctrl", 0x1D}, {"alt", 0x38},
+        {"space", 0x39}, {"enter", 0x1C}, {"esc", 0x01}, {"backspace", 0x0E},
+        {"capslock", 0x3A}, {"insert", 0x52}, {"delete", 0x53},
+        {"home", 0x47}, {"end", 0x4F}, {"pageup", 0x49}, {"pagedown", 0x51},
+        {"left", 0x4B}, {"up", 0x48}, {"right", 0x4D}, {"down", 0x50},
+        {"e", 0x12},
+    };
+    
+    // VK map (fallback)
+    static Dictionary<string, int> vkMap = new Dictionary<string, int>() {
         {"1", 0x31}, {"2", 0x32}, {"3", 0x33}, {"4", 0x34}, {"5", 0x35},
         {"6", 0x36}, {"7", 0x37}, {"8", 0x38}, {"9", 0x39}, {"0", 0x30},
         {"a", 0x41}, {"b", 0x42}, {"c", 0x43}, {"d", 0x44}, {"e", 0x45},
@@ -61,26 +128,42 @@ public class ClassExample : Task
         {"u", 0x55}, {"v", 0x56}, {"w", 0x57}, {"x", 0x58}, {"y", 0x59},
         {"z", 0x5A},
         {"f1", 0x70}, {"f2", 0x71}, {"f3", 0x72}, {"f4", 0x73},
-        {"f5", 0x74}, {"f6", 0x75}, {"f7", 0x76}, {"f8", 0x77}, 
+        {"f5", 0x74}, {"f6", 0x75}, {"f7", 0x76}, {"f8", 0x77},
         {"f9", 0x78}, {"f10", 0x79}, {"f11", 0x7A}, {"f12", 0x7B},
-        {"mouse4", 0x05}, {"mouse5", 0x06},
         {"tab", 0x09}, {"shift", 0x10}, {"ctrl", 0x11}, {"alt", 0x12},
         {"space", 0x20}, {"enter", 0x0D}, {"esc", 0x1B}, {"backspace", 0x08},
-        {"capslock", 0x14}, {"insert", 0x2D}, {"delete", 0x2E}, 
+        {"capslock", 0x14}, {"insert", 0x2D}, {"delete", 0x2E},
         {"home", 0x24}, {"end", 0x23}, {"pageup", 0x21}, {"pagedown", 0x22},
         {"left", 0x25}, {"up", 0x26}, {"right", 0x27}, {"down", 0x28},
-        {",", 0xBC}, {".", 0xBE}, {";", 0xBA}, {"'", 0xDE},
-        {"[", 0xDB}, {"]", 0xDD}, {"-", 0xBD}, {"=", 0xBB},
-        {"/", 0xBF}, {"\\", 0xDC}, {"`", 0xC0}
     };
     
+    // ============================================================
+    // STATO GLOBALE
+    // ============================================================
+    static volatile bool running = false;
+    static Dictionary<string, bool> activeModules = new Dictionary<string, bool>();
+    static Dictionary<string, ModuleConfig> moduleConfigs = new Dictionary<string, ModuleConfig>();
+    static Dictionary<string, Thread> moduleThreads = new Dictionary<string, Thread>();
+    static object moduleLock = new object();
+    
+    // Auto Totem
+    static volatile bool autoTotemActive = false;
+    static int autoTotemKeybindCode = 0x47; // G default
+    static int autoTotemDelay = 100; // ms tra ogni slot check
+    
+    // ============================================================
+    // CONFIG CLASS
+    // ============================================================
     class ModuleConfig
     {
         public string Keybind;
         public int KeybindCode;
-        public int Slot1;
-        public int Slot2;
-        public int Slot3;
+        public ushort Slot1Scan;
+        public ushort Slot2Scan;
+        public ushort Slot3Scan;
+        public string Slot1Name;
+        public string Slot2Name;
+        public string Slot3Name;
         public int Delay;
         public int DelayMs1;
         public int DelayMs2;
@@ -88,8 +171,14 @@ public class ClassExample : Task
         public int DelayMs4;
         public int DelayMs5;
         public int DelayMs6;
+        // Per auto totem
+        public int TotemRefillThreshold = 1;
+        public int TotemKeybindCode = 0x47;
     }
     
+    // ============================================================
+    // MINECRAFT DETECTION
+    // ============================================================
     static bool IsMinecraftFocused()
     {
         try
@@ -97,15 +186,25 @@ public class ClassExample : Task
             IntPtr hWnd = GetForegroundWindow();
             if (hWnd == IntPtr.Zero) return false;
             
+            // Metodo 1: per process name
             uint processId;
             GetWindowThreadProcessId(hWnd, out processId);
+            if (processId != 0)
+            {
+                Process process = Process.GetProcessById((int)processId);
+                string name = process.ProcessName.ToLower();
+                if (name == "javaw" || name == "java" || name == "minecraft" || name == "minecraftlauncher" || name == "minecraft.windows")
+                    return true;
+            }
             
-            if (processId == 0) return false;
+            // Metodo 2: per window title (fallback per versioni moderne)
+            var sb = new System.Text.StringBuilder(256);
+            GetWindowText(hWnd, sb, 256);
+            string title = sb.ToString().ToLower();
+            if (title.Contains("minecraft") || title.Contains("mc "))
+                return true;
             
-            Process process = Process.GetProcessById((int)processId);
-            string processName = process.ProcessName.ToLower();
-            
-            return processName == "javaw" || processName == "java";
+            return false;
         }
         catch
         {
@@ -113,22 +212,66 @@ public class ClassExample : Task
         }
     }
     
+    // ============================================================
+    // INPUT MODERNO CON SendInput
+    // ============================================================
+    static void SendKey(ushort scanCode, bool keyUp)
+    {
+        INPUT[] inputs = new INPUT[1];
+        inputs[0] = new INPUT();
+        inputs[0].type = INPUT_KEYBOARD;
+        inputs[0].u.ki = new KEYBDINPUT();
+        inputs[0].u.ki.wVk = 0;
+        inputs[0].u.ki.wScan = scanCode;
+        inputs[0].u.ki.dwFlags = KEYEVENTF_SCANCODE | (keyUp ? KEYEVENTF_KEYUP : 0);
+        inputs[0].u.ki.time = 0;
+        inputs[0].u.ki.dwExtraInfo = IntPtr.Zero;
+        SendInput(1, inputs, Marshal.SizeOf(typeof(INPUT)));
+    }
+    
+    static void PressKeyScan(ushort scanCode)
+    {
+        SendKey(scanCode, false);  // KeyDown
+        SendKey(scanCode, true);   // KeyUp
+    }
+    
+    static void SendMouse(uint flags)
+    {
+        INPUT[] inputs = new INPUT[1];
+        inputs[0] = new INPUT();
+        inputs[0].type = INPUT_MOUSE;
+        inputs[0].u.mi = new MOUSEINPUT();
+        inputs[0].u.mi.dx = 0;
+        inputs[0].u.mi.dy = 0;
+        inputs[0].u.mi.mouseData = 0;
+        inputs[0].u.mi.dwFlags = flags;
+        inputs[0].u.mi.time = 0;
+        inputs[0].u.mi.dwExtraInfo = IntPtr.Zero;
+        SendInput(1, inputs, Marshal.SizeOf(typeof(INPUT)));
+    }
+    
     static void ClickRight()
     {
-        mouse_event(MOUSEEVENTF_RIGHTDOWN, 0, 0, 0, 0);
-        mouse_event(MOUSEEVENTF_RIGHTUP, 0, 0, 0, 0);
+        SendMouse(MOUSEEVENTF_RIGHTDOWN);
+        Thread.Sleep(1);
+        SendMouse(MOUSEEVENTF_RIGHTUP);
     }
     
     static void ClickLeft()
     {
-        mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0);
-        mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0);
+        SendMouse(MOUSEEVENTF_LEFTDOWN);
+        Thread.Sleep(1);
+        SendMouse(MOUSEEVENTF_LEFTUP);
     }
     
-    static void PressKey(int vkCode)
+    static void ClickLeftHold()
     {
-        keybd_event((byte)vkCode, 0, 0, 0);
-        keybd_event((byte)vkCode, 0, KEYEVENTF_KEYUP, 0);
+        SendMouse(MOUSEEVENTF_LEFTDOWN);
+    }
+    
+    static void ClickLeftRelease()
+    {
+        SendMouse(MOUSEEVENTF_LEFTUP);
     }
     
     static bool IsKeyPressed(int vkCode)
@@ -136,50 +279,116 @@ public class ClassExample : Task
         return (GetAsyncKeyState(vkCode) & 0x8000) != 0;
     }
     
-    static int GetVKCode(string key)
+    static ushort GetScanCode(string key)
     {
         key = key.ToLower().Trim();
-        if (keyMap.ContainsKey(key))
-            return keyMap[key];
+        if (scanMap.ContainsKey(key))
+            return scanMap[key];
         return 0;
     }
     
-    static void RunInventoryTotem()
+    static int GetVKCode(string key)
     {
-        bool lastState = false;
-        bool inventoryOpen = false;
+        key = key.ToLower().Trim();
+        if (vkMap.ContainsKey(key))
+            return vkMap[key];
+        return 0;
+    }
+    
+    // ============================================================
+    // AUTO TOTEM MIGLIORATO
+    // ============================================================
+    static void RunAutoTotem()
+    {
+        // Scan code per E (apri inventario)
+        ushort eScan = 0x12;
+        ushort fScan = 0x21;
+        ushort escScan = 0x01;
         
-        while (inventoryTotemActive)
+        // Scan code per slot 1-9
+        ushort[] slotScans = { 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A };
+        
+        while (autoTotemActive)
         {
-            bool currentState = IsKeyPressed(totemKeybindCode);
-            
-            if (currentState && !lastState)
+            if (!IsMinecraftFocused())
             {
-                if (IsMinecraftFocused())
+                Thread.Sleep(50);
+                continue;
+            }
+            
+            // Se premi il tasto G (o configurato), esegui un refill manuale / auto
+            if (IsKeyPressed(autoTotemKeybindCode))
+            {
+                // === FASE 1: Apri inventario ===
+                PressKeyScan(eScan);    // E
+                Thread.Sleep(80 + autoTotemDelay);
+                
+                // === FASE 2: Trova un totem nell'hotbar (slot 1-9) ===
+                // Prima controlla se lo slot 1 ha già un totem — se sì, F per spostare
+                // Poi scorre slot 2-9 per trovare altri totem
+                
+                bool totemMoved = false;
+                
+                for (int slotIdx = 0; slotIdx < 9 && autoTotemActive; slotIdx++)
                 {
-                    // Apri inventario con E
-                    PressKey(0x45); // E
-                    Thread.Sleep(60);
-                    inventoryOpen = true;
+                    if (!IsKeyPressed(autoTotemKeybindCode) && slotIdx > 0)
+                        break;
                     
-                    // Seleziona slot 1 e premi F per spostare in offhand
-                    // Se l'offhand è già occupata, F non fa nulla
-                    PressKey(0x31); // 1
-                    Thread.Sleep(30);
-                    PressKey(0x46); // F
-                    Thread.Sleep(30);
+                    // Seleziona slot
+                    PressKeyScan(slotScans[slotIdx]);
+                    Thread.Sleep(30 + autoTotemDelay/2);
                     
-                    // Chiudi inventario
-                    PressKey(0x45); // E
+                    // Premi F per spostare in offhand
+                    PressKeyScan(fScan);
+                    Thread.Sleep(40 + autoTotemDelay/2);
+                    
+                    // Se è il primo slot, consideriamo spostato
+                    if (slotIdx == 0)
+                    {
+                        totemMoved = true;
+                    }
+                }
+                
+                // === FASE 3: Se non abbiamo spostato nulla col primo ciclo, 
+                // prova a cercare nell'inventario (slot inventory veri) ===
+                if (!totemMoved && autoTotemActive)
+                {
+                    // Shift+click per spostare velocemente (se ci sono totem nell'inventario)
+                    // Shift = scan 0x2A
+                    SendKey(0x2A, false); // Shift Down
+                    Thread.Sleep(10);
+                    
+                    for (int slotIdx = 0; slotIdx < 9 && autoTotemActive; slotIdx++)
+                    {
+                        if (!IsKeyPressed(autoTotemKeybindCode) && slotIdx > 0)
+                            break;
+                        
+                        PressKeyScan(slotScans[slotIdx]);
+                        Thread.Sleep(20);
+                    }
+                    
+                    SendKey(0x2A, true); // Shift Up
                     Thread.Sleep(30);
-                    inventoryOpen = false;
+                }
+                
+                // === FASE 4: Chiudi inventario ===
+                PressKeyScan(eScan);    // E
+                Thread.Sleep(40);
+                
+                // === FASE 5: Aspetta che il tasto venga rilasciato ===
+                while (IsKeyPressed(autoTotemKeybindCode) && autoTotemActive)
+                {
+                    Thread.Sleep(10);
                 }
             }
             
-            lastState = currentState;
-            Thread.Sleep(10);
+            Thread.Sleep(5);
         }
     }
+    
+    // ============================================================
+    // RUNNER MIGLIORATI CON TIMING PRECISI
+    // ============================================================
     
     static void RunAirplace(ModuleConfig config)
     {
@@ -191,33 +400,35 @@ public class ClassExample : Task
             
             if (currentState && !lastState && IsMinecraftFocused())
             {
-                PressKey(config.Slot1);
-                ClickRight();
-                Thread.Sleep(config.DelayMs1 > 0 ? config.DelayMs1 : 65);
-                
-                PressKey(config.Slot2);
-                ClickRight();
-                Thread.Sleep(config.DelayMs2 > 0 ? config.DelayMs2 : 70);
-                
-                PressKey(config.Slot3);
-                ClickRight();
-                Thread.Sleep(config.DelayMs3 > 0 ? config.DelayMs3 : 50);
-                
-                PressKey(config.Slot1);
-                ClickRight();
-                Thread.Sleep(config.DelayMs4 > 0 ? config.DelayMs4 : 65);
-                
-                PressKey(config.Slot2);
-                ClickRight();
-                Thread.Sleep(config.DelayMs5 > 0 ? config.DelayMs5 : 70);
-                
-                PressKey(config.Slot3);
-                ClickRight();
-                Thread.Sleep(config.DelayMs6 > 0 ? config.DelayMs6 : 50);
+                // Sequenza airplace: posiziona 3 blocchi in loop
+                // Delay ottimizzati per 20 tick/s (50ms per tick)
+                for (int cycle = 0; cycle < 2 && activeModules.ContainsKey("airplace") && activeModules["airplace"]; cycle++)
+                {
+                    if (!IsKeyPressed(config.KeybindCode))
+                    {
+                        // Se rilasci il tasto, esci solo se siamo nel secondo ciclo
+                        if (cycle == 1) break;
+                    }
+                    
+                    PressKeyScan(config.Slot1Scan);
+                    Thread.Sleep(5);
+                    ClickRight();
+                    Thread.Sleep(config.DelayMs1 > 0 ? config.DelayMs1 : 65);
+                    
+                    PressKeyScan(config.Slot2Scan);
+                    Thread.Sleep(5);
+                    ClickRight();
+                    Thread.Sleep(config.DelayMs2 > 0 ? config.DelayMs2 : 70);
+                    
+                    PressKeyScan(config.Slot3Scan);
+                    Thread.Sleep(5);
+                    ClickRight();
+                    Thread.Sleep(config.DelayMs3 > 0 ? config.DelayMs3 : 50);
+                }
             }
             
             lastState = currentState;
-            Thread.Sleep(1);
+            Thread.Sleep(5); // Riduce CPU usage
         }
     }
     
@@ -231,21 +442,26 @@ public class ClassExample : Task
             
             if (currentState && !lastState && IsMinecraftFocused())
             {
-                PressKey(config.Slot1);
-                ClickRight();
-                Thread.Sleep(config.DelayMs1 > 0 ? config.DelayMs1 : config.Delay);
+                int baseDelay = config.Delay > 0 ? config.Delay : 50;
                 
-                PressKey(config.Slot2);
+                PressKeyScan(config.Slot1Scan);
+                Thread.Sleep(5);
                 ClickRight();
-                Thread.Sleep(config.DelayMs2 > 0 ? config.DelayMs2 : config.Delay);
+                Thread.Sleep(config.DelayMs1 > 0 ? config.DelayMs1 : baseDelay);
                 
-                PressKey(config.Slot3);
+                PressKeyScan(config.Slot2Scan);
+                Thread.Sleep(5);
                 ClickRight();
-                Thread.Sleep(config.DelayMs3 > 0 ? config.DelayMs3 : config.Delay);
+                Thread.Sleep(config.DelayMs2 > 0 ? config.DelayMs2 : baseDelay);
+                
+                PressKeyScan(config.Slot3Scan);
+                Thread.Sleep(5);
+                ClickRight();
+                Thread.Sleep(config.DelayMs3 > 0 ? config.DelayMs3 : baseDelay);
             }
             
             lastState = currentState;
-            Thread.Sleep(1);
+            Thread.Sleep(5);
         }
     }
     
@@ -259,33 +475,43 @@ public class ClassExample : Task
             
             if (currentState && !lastState && IsMinecraftFocused())
             {
-                PressKey(config.Slot1);
-                ClickRight();
-                Thread.Sleep(config.DelayMs1 > 0 ? config.DelayMs1 : config.Delay);
+                int baseDelay = config.Delay > 0 ? config.Delay : 50;
                 
-                PressKey(config.Slot2);
+                // Cycle 1
+                PressKeyScan(config.Slot1Scan);
+                Thread.Sleep(5);
                 ClickRight();
-                Thread.Sleep(config.DelayMs2 > 0 ? config.DelayMs2 : config.Delay);
+                Thread.Sleep(config.DelayMs1 > 0 ? config.DelayMs1 : baseDelay);
                 
-                PressKey(config.Slot3);
+                PressKeyScan(config.Slot2Scan);
+                Thread.Sleep(5);
                 ClickRight();
-                Thread.Sleep(config.DelayMs3 > 0 ? config.DelayMs3 : config.Delay);
+                Thread.Sleep(config.DelayMs2 > 0 ? config.DelayMs2 : baseDelay);
                 
-                PressKey(config.Slot1);
+                PressKeyScan(config.Slot3Scan);
+                Thread.Sleep(5);
                 ClickRight();
-                Thread.Sleep(config.DelayMs4 > 0 ? config.DelayMs4 : config.Delay);
+                Thread.Sleep(config.DelayMs3 > 0 ? config.DelayMs3 : baseDelay);
                 
-                PressKey(config.Slot2);
+                // Cycle 2
+                PressKeyScan(config.Slot1Scan);
+                Thread.Sleep(5);
                 ClickRight();
-                Thread.Sleep(config.DelayMs5 > 0 ? config.DelayMs5 : config.Delay);
+                Thread.Sleep(config.DelayMs4 > 0 ? config.DelayMs4 : baseDelay);
                 
-                PressKey(config.Slot3);
+                PressKeyScan(config.Slot2Scan);
+                Thread.Sleep(5);
                 ClickRight();
-                Thread.Sleep(config.DelayMs6 > 0 ? config.DelayMs6 : config.Delay);
+                Thread.Sleep(config.DelayMs5 > 0 ? config.DelayMs5 : baseDelay);
+                
+                PressKeyScan(config.Slot3Scan);
+                Thread.Sleep(5);
+                ClickRight();
+                Thread.Sleep(config.DelayMs6 > 0 ? config.DelayMs6 : baseDelay);
             }
             
             lastState = currentState;
-            Thread.Sleep(1);
+            Thread.Sleep(5);
         }
     }
     
@@ -301,36 +527,50 @@ public class ClassExample : Task
             if (!currentState && lastState)
             {
                 isExecuting = false;
+                // Rilascia left click se tenuto premuto
+                ClickLeftRelease();
             }
             
             if (currentState && !lastState && !isExecuting && IsMinecraftFocused())
             {
                 isExecuting = true;
                 
-                PressKey(config.Slot2);
+                // 1. Seleziona slot obsidian e piazza
+                PressKeyScan(config.Slot2Scan);
                 Thread.Sleep(5);
                 ClickRight();
                 Thread.Sleep(config.DelayMs1 > 0 ? config.DelayMs1 : 45);
                 
-                PressKey(config.Slot1);
+                // 2. Switch a crystal
+                PressKeyScan(config.Slot1Scan);
                 Thread.Sleep(config.DelayMs2 > 0 ? config.DelayMs2 : 10);
                 
-                while (IsKeyPressed(config.KeybindCode) && activeModules.ContainsKey("hitcrystal") && activeModules["hitcrystal"] && IsMinecraftFocused())
+                // 3. Loop crystal break (tieni premuto keybind)
+                int crystalClicks = 0;
+                while (IsKeyPressed(config.KeybindCode) && 
+                       activeModules.ContainsKey("hitcrystal") && 
+                       activeModules["hitcrystal"] && 
+                       IsMinecraftFocused() &&
+                       crystalClicks < 30) // Safety limit
                 {
                     ClickRight();
                     Thread.Sleep(config.DelayMs3 > 0 ? config.DelayMs3 : 18);
                     ClickLeft();
                     Thread.Sleep(config.DelayMs4 > 0 ? config.DelayMs4 : 18);
+                    crystalClicks++;
                 }
                 
                 isExecuting = false;
             }
             
             lastState = currentState;
-            Thread.Sleep(1);
+            Thread.Sleep(5);
         }
     }
     
+    // ============================================================
+    // MAIN EXECUTION
+    // ============================================================
     public override bool Execute()
     {
         Application.EnableVisualStyles();
@@ -342,57 +582,114 @@ public class ClassExample : Task
         return true;
     }
     
+    // ============================================================
+    // UI FORM
+    // ============================================================
     class MacroForm : Form
     {
         private Panel airplacePanel, singlePanel, doublePanel, hitcrystalPanel, totemPanel;
         private Color cardColor = Color.FromArgb(30, 30, 30);
         private Color activeColor = Color.FromArgb(60, 60, 60);
+        private Color successColor = Color.FromArgb(40, 70, 40);
+        private System.Windows.Forms.Timer statusTimer;
         
         public MacroForm()
         {
-            this.Text = "Areola Macro";
-            this.Size = new Size(900, 550);
+            this.Text = "Areola Macro v2.0";
+            this.Size = new Size(900, 580);
             this.StartPosition = FormStartPosition.CenterScreen;
             this.BackColor = Color.FromArgb(20, 20, 20);
             this.FormBorderStyle = FormBorderStyle.FixedDialog;
             this.MaximizeBox = false;
             this.MinimizeBox = true;
+            this.TopMost = true; // SEMPRE IN PRIMO PIANO per attivazione rapida
             
             InitializeComponents();
+            
+            // Timer per aggiornamento stato in real-time
+            statusTimer = new System.Windows.Forms.Timer();
+            statusTimer.Interval = 100;
+            statusTimer.Tick += (s, e) => UpdateStatusIndicators();
+            statusTimer.Start();
         }
         
         private void InitializeComponents()
         {
             var headerLabel = new Label();
-            headerLabel.Text = "AREOLA MACRO";
+            headerLabel.Text = "AREOLA MACRO v2.0";
             headerLabel.Font = new Font("Segoe UI", 24, FontStyle.Bold);
             headerLabel.ForeColor = Color.White;
             headerLabel.AutoSize = true;
-            headerLabel.Location = new Point(330, 20);
+            headerLabel.Location = new Point(300, 15);
             this.Controls.Add(headerLabel);
             
             var subtitleLabel = new Label();
-            subtitleLabel.Text = "Professional Minecraft Automation";
+            subtitleLabel.Text = "Professional Minecraft Automation — Auto Totem Incluso";
             subtitleLabel.Font = new Font("Segoe UI", 10, FontStyle.Italic);
             subtitleLabel.ForeColor = Color.FromArgb(150, 150, 150);
             subtitleLabel.AutoSize = true;
-            subtitleLabel.Location = new Point(355, 55);
+            subtitleLabel.Location = new Point(310, 50);
             this.Controls.Add(subtitleLabel);
             
+            // Riga superiore: 5 cards
             airplacePanel = CreateModuleCard("Airplace Mode", 30, 100, "airplace");
             singlePanel = CreateModuleCard("Single Anchor", 200, 100, "single");
             doublePanel = CreateModuleCard("Double Anchor", 370, 100, "double");
             hitcrystalPanel = CreateModuleCard("Hit Crystal", 540, 100, "hitcrystal");
-            totemPanel = CreateTotemCard("Inventory Totem", 710, 100);
+            totemPanel = CreateAutoTotemCard("Auto Totem", 710, 100);
             
             this.Controls.Add(airplacePanel);
             this.Controls.Add(singlePanel);
             this.Controls.Add(doublePanel);
             this.Controls.Add(hitcrystalPanel);
             this.Controls.Add(totemPanel);
+            
+            // Footer info
+            var footerLabel = new Label();
+            footerLabel.Text = "💡 Clicca su una card per attivare/disattivare | CONFIG per impostare slot e delay";
+            footerLabel.Font = new Font("Segoe UI", 9);
+            footerLabel.ForeColor = Color.FromArgb(120, 120, 120);
+            footerLabel.AutoSize = true;
+            footerLabel.Location = new Point(180, 350);
+            this.Controls.Add(footerLabel);
+            
+            var devLabel = new Label();
+            devLabel.Text = "Auto Totem: tiene G premuto → apre inventario → cerca totem → sposta in offhand → ripete";
+            devLabel.Font = new Font("Segoe UI", 8);
+            devLabel.ForeColor = Color.FromArgb(100, 100, 100);
+            devLabel.AutoSize = true;
+            devLabel.Location = new Point(120, 370);
+            this.Controls.Add(devLabel);
         }
         
-        private Panel CreateTotemCard(string name, int x, int y)
+        private void UpdateStatusIndicators()
+        {
+            // Aggiorna colore bordo delle card attive
+            if (activeModules.ContainsKey("airplace") && activeModules["airplace"])
+                airplacePanel.BorderStyle = BorderStyle.FixedSingle;
+            else
+                airplacePanel.BorderStyle = BorderStyle.None;
+                
+            if (activeModules.ContainsKey("single") && activeModules["single"])
+                singlePanel.BorderStyle = BorderStyle.FixedSingle;
+            else
+                singlePanel.BorderStyle = BorderStyle.None;
+                
+            if (activeModules.ContainsKey("double") && activeModules["double"])
+                doublePanel.BorderStyle = BorderStyle.FixedSingle;
+            else
+                doublePanel.BorderStyle = BorderStyle.None;
+                
+            if (activeModules.ContainsKey("hitcrystal") && activeModules["hitcrystal"])
+                hitcrystalPanel.BorderStyle = BorderStyle.FixedSingle;
+            else
+                hitcrystalPanel.BorderStyle = BorderStyle.None;
+        }
+        
+        // ============================================================
+        // AUTO TOTEM CARD
+        // ============================================================
+        private Panel CreateAutoTotemCard(string name, int x, int y)
         {
             var panel = new Panel();
             panel.Location = new Point(x, y);
@@ -415,13 +712,13 @@ public class ClassExample : Task
             keybindLabel.Font = new Font("Segoe UI", 10, FontStyle.Bold);
             keybindLabel.ForeColor = Color.FromArgb(150, 150, 150);
             keybindLabel.AutoSize = true;
-            keybindLabel.Location = new Point(45, 75);
+            keybindLabel.Location = new Point(45, 70);
             keybindLabel.Tag = "keybind";
             
             var statusDot = new Label();
             statusDot.Size = new Size(15, 15);
             statusDot.BackColor = Color.FromArgb(60, 60, 60);
-            statusDot.Location = new Point(25, 130);
+            statusDot.Location = new Point(25, 100);
             statusDot.Tag = "statusdot";
             
             var statusText = new Label();
@@ -429,15 +726,15 @@ public class ClassExample : Task
             statusText.Font = new Font("Segoe UI", 9);
             statusText.ForeColor = Color.FromArgb(150, 150, 150);
             statusText.AutoSize = true;
-            statusText.Location = new Point(45, 128);
+            statusText.Location = new Point(45, 98);
             statusText.Tag = "statustext";
             
             var infoLabel = new Label();
-            infoLabel.Text = "Press G to move slot 1\n→ offhand (if empty)";
+            infoLabel.Text = "Hold G → auto refill\noffhand con totem\ndall'inventario";
             infoLabel.Font = new Font("Segoe UI", 8);
             infoLabel.ForeColor = Color.FromArgb(130, 130, 130);
             infoLabel.AutoSize = true;
-            infoLabel.Location = new Point(35, 150);
+            infoLabel.Location = new Point(35, 120);
             infoLabel.Tag = "info";
             
             var configBtn = new Button();
@@ -460,11 +757,11 @@ public class ClassExample : Task
             panel.Controls.Add(infoLabel);
             panel.Controls.Add(configBtn);
             
-            panel.Click += delegate 
-            { 
+            panel.Click += delegate
+            {
                 if (!panel.Controls.OfType<Button>().Any(b => b.ClientRectangle.Contains(panel.PointToClient(Cursor.Position))))
                 {
-                    ToggleTotem(panel); 
+                    ToggleTotem(panel);
                 }
             };
             
@@ -474,8 +771,8 @@ public class ClassExample : Task
         private void OpenTotemConfig(Panel panel)
         {
             var configForm = new Form();
-            configForm.Text = "Configure Inventory Totem";
-            configForm.Size = new Size(350, 240);
+            configForm.Text = "Configure Auto Totem";
+            configForm.Size = new Size(400, 300);
             configForm.StartPosition = FormStartPosition.CenterParent;
             configForm.FormBorderStyle = FormBorderStyle.FixedDialog;
             configForm.MaximizeBox = false;
@@ -493,29 +790,47 @@ public class ClassExample : Task
             
             var keybindText = new TextBox();
             keybindText.Location = new Point(20, yPos + 25);
-            keybindText.Size = new Size(300, 25);
+            keybindText.Size = new Size(350, 25);
             keybindText.BackColor = Color.FromArgb(50, 50, 50);
             keybindText.ForeColor = Color.White;
             keybindText.BorderStyle = BorderStyle.FixedSingle;
-            keybindText.Text = GetKeyName(totemKeybindCode);
+            keybindText.Text = GetKeyName(autoTotemKeybindCode);
             configForm.Controls.Add(keybindText);
             
-            yPos += 70;
+            yPos += 60;
+            
+            var delayLabel = new Label();
+            delayLabel.Text = "Delay (ms) between slot checks:";
+            delayLabel.Location = new Point(20, yPos);
+            delayLabel.AutoSize = true;
+            delayLabel.ForeColor = Color.White;
+            configForm.Controls.Add(delayLabel);
+            
+            var delayText = new TextBox();
+            delayText.Location = new Point(20, yPos + 25);
+            delayText.Size = new Size(350, 25);
+            delayText.Text = autoTotemDelay.ToString();
+            delayText.BackColor = Color.FromArgb(50, 50, 50);
+            delayText.ForeColor = Color.White;
+            delayText.BorderStyle = BorderStyle.FixedSingle;
+            configForm.Controls.Add(delayText);
+            
+            yPos += 60;
             
             var infoLabel = new Label();
-            infoLabel.Text = "Opens inventory → selects slot 1 → presses F\nOnly works if offhand is empty";
+            infoLabel.Text = "Tenendo premuto il tasto:\n1. Apre inventario (E)\n2. Scorre slot 1-9 premendo F per spostare in offhand\n3. Shift+click per inventory slots\n4. Chiude inventario";
             infoLabel.Location = new Point(20, yPos);
-            infoLabel.Size = new Size(300, 40);
+            infoLabel.Size = new Size(350, 80);
             infoLabel.ForeColor = Color.FromArgb(150, 150, 150);
             infoLabel.Font = new Font("Segoe UI", 9);
             configForm.Controls.Add(infoLabel);
             
-            yPos += 60;
+            yPos += 90;
             
             var saveBtn = new Button();
             saveBtn.Text = "SAVE";
-            saveBtn.Location = new Point(105, yPos);
-            saveBtn.Size = new Size(140, 35);
+            saveBtn.Location = new Point(125, yPos);
+            saveBtn.Size = new Size(150, 35);
             saveBtn.BackColor = Color.White;
             saveBtn.ForeColor = Color.Black;
             saveBtn.FlatStyle = FlatStyle.Flat;
@@ -533,7 +848,14 @@ public class ClassExample : Task
                     return;
                 }
                 
-                totemKeybindCode = code;
+                if (!int.TryParse(delayText.Text, out int delay) || delay < 10 || delay > 1000)
+                {
+                    MessageBox.Show("Delay must be between 10 and 1000 ms.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return;
+                }
+                
+                autoTotemKeybindCode = code;
+                autoTotemDelay = delay;
                 
                 foreach (Control ctrl in panel.Controls)
                 {
@@ -553,56 +875,57 @@ public class ClassExample : Task
         
         private void ToggleTotem(Panel panel)
         {
-            inventoryTotemActive = !inventoryTotemActive;
+            autoTotemActive = !autoTotemActive;
             
-            if (inventoryTotemActive)
+            if (autoTotemActive)
             {
                 panel.BackColor = activeColor;
+                UpdatePanelColors(panel, Color.White, "Active", Color.White, Color.FromArgb(200, 200, 200), Color.White);
                 
-                foreach (Control ctrl in panel.Controls)
-                {
-                    if (ctrl is Label && ctrl.Tag != null && ctrl.Tag.ToString() == "statusdot")
-                        ctrl.BackColor = Color.White;
-                    if (ctrl is Label && ctrl.Tag != null && ctrl.Tag.ToString() == "statustext")
-                    {
-                        ((Label)ctrl).Text = "Active";
-                        ctrl.ForeColor = Color.White;
-                    }
-                    if (ctrl is Label && ctrl.Tag != null && ctrl.Tag.ToString() == "info")
-                        ctrl.ForeColor = Color.FromArgb(200, 200, 200);
-                    if (ctrl is Label && ctrl.Tag != null && ctrl.Tag.ToString() == "keybind")
-                        ctrl.ForeColor = Color.White;
-                    if (ctrl is Label && ctrl.Tag == null)
-                        ctrl.ForeColor = Color.White;
-                }
-                
-                var thread = new Thread(RunInventoryTotem);
+                var thread = new Thread(RunAutoTotem);
                 thread.IsBackground = true;
                 thread.Start();
             }
             else
             {
                 panel.BackColor = cardColor;
-                
-                foreach (Control ctrl in panel.Controls)
+                UpdatePanelColors(panel, Color.FromArgb(60, 60, 60), "Inactive", Color.FromArgb(150, 150, 150), Color.FromArgb(130, 130, 130), Color.FromArgb(150, 150, 150));
+            }
+        }
+        
+        private void UpdatePanelColors(Panel panel, Color dotColor, string statusTextVal, Color statusColor, Color infoColor, Color keybindColor)
+        {
+            foreach (Control ctrl in panel.Controls)
+            {
+                if (ctrl is Label lbl && lbl.Tag != null)
                 {
-                    if (ctrl is Label && ctrl.Tag != null && ctrl.Tag.ToString() == "statusdot")
-                        ctrl.BackColor = Color.FromArgb(60, 60, 60);
-                    if (ctrl is Label && ctrl.Tag != null && ctrl.Tag.ToString() == "statustext")
+                    switch (lbl.Tag.ToString())
                     {
-                        ((Label)ctrl).Text = "Inactive";
-                        ctrl.ForeColor = Color.FromArgb(150, 150, 150);
+                        case "statusdot":
+                            lbl.BackColor = dotColor;
+                            break;
+                        case "statustext":
+                            lbl.Text = statusTextVal;
+                            lbl.ForeColor = statusColor;
+                            break;
+                        case "info":
+                            lbl.ForeColor = infoColor;
+                            break;
+                        case "keybind":
+                            lbl.ForeColor = keybindColor;
+                            break;
                     }
-                    if (ctrl is Label && ctrl.Tag != null && ctrl.Tag.ToString() == "info")
-                        ctrl.ForeColor = Color.FromArgb(130, 130, 130);
-                    if (ctrl is Label && ctrl.Tag != null && ctrl.Tag.ToString() == "keybind")
-                        ctrl.ForeColor = Color.FromArgb(150, 150, 150);
-                    if (ctrl is Label && ctrl.Tag == null)
-                        ctrl.ForeColor = Color.White;
+                }
+                else if (ctrl is Label lbl2 && lbl2.Tag == null)
+                {
+                    lbl2.ForeColor = Color.White;
                 }
             }
         }
         
+        // ============================================================
+        // MODULE CARD
+        // ============================================================
         private Panel CreateModuleCard(string name, int x, int y, string moduleId)
         {
             var panel = new Panel();
@@ -625,7 +948,7 @@ public class ClassExample : Task
             var statusDot = new Label();
             statusDot.Size = new Size(15, 15);
             statusDot.BackColor = Color.FromArgb(60, 60, 60);
-            statusDot.Location = new Point(25, 130);
+            statusDot.Location = new Point(25, 100);
             statusDot.Tag = "statusdot";
             
             var statusText = new Label();
@@ -633,8 +956,17 @@ public class ClassExample : Task
             statusText.Font = new Font("Segoe UI", 9);
             statusText.ForeColor = Color.FromArgb(150, 150, 150);
             statusText.AutoSize = true;
-            statusText.Location = new Point(45, 128);
+            statusText.Location = new Point(45, 98);
             statusText.Tag = "statustext";
+            
+            // Info label — mostra la configurazione corrente
+            var infoLabel = new Label();
+            infoLabel.Text = "Click to activate";
+            infoLabel.Font = new Font("Segoe UI", 8);
+            infoLabel.ForeColor = Color.FromArgb(130, 130, 130);
+            infoLabel.AutoSize = true;
+            infoLabel.Location = new Point(35, 120);
+            infoLabel.Tag = "info";
             
             var configBtn = new Button();
             configBtn.Text = "CONFIG";
@@ -649,254 +981,213 @@ public class ClassExample : Task
             
             string capturedModuleId = moduleId;
             string capturedName = name;
-            configBtn.Click += delegate { OpenConfig(capturedModuleId, capturedName); };
+            Panel capturedPanel = panel;
+            
+            configBtn.Click += delegate { OpenConfig(capturedModuleId, capturedName, capturedPanel); };
             
             panel.Controls.Add(nameLabel);
             panel.Controls.Add(statusDot);
             panel.Controls.Add(statusText);
+            panel.Controls.Add(infoLabel);
             panel.Controls.Add(configBtn);
             
-            string capturedId = moduleId;
-            Panel capturedPanel = panel;
-            panel.Click += delegate 
-            { 
+            panel.Click += delegate
+            {
                 if (!panel.Controls.OfType<Button>().Any(b => b.ClientRectangle.Contains(panel.PointToClient(Cursor.Position))))
                 {
-                    ToggleModule(capturedId, capturedPanel); 
+                    ToggleModule(capturedModuleId, capturedPanel);
                 }
             };
             
             return panel;
         }
         
-        private void OpenConfig(string moduleId, string moduleName)
+        // ============================================================
+        // CONFIG WINDOW
+        // ============================================================
+        private void OpenConfig(string moduleId, string moduleName, Panel panel)
         {
             var configForm = new Form();
             configForm.Text = "Configure " + moduleName;
-            configForm.Size = new Size(400, 550);
+            configForm.Size = new Size(450, 550);
             configForm.StartPosition = FormStartPosition.CenterParent;
             configForm.FormBorderStyle = FormBorderStyle.FixedDialog;
             configForm.MaximizeBox = false;
             configForm.MinimizeBox = false;
             configForm.BackColor = Color.FromArgb(30, 30, 30);
             
+            var mainPanel = new Panel();
+            mainPanel.Location = new Point(0, 0);
+            mainPanel.Size = new Size(450, 500);
+            mainPanel.AutoScroll = true;
+            mainPanel.BackColor = Color.FromArgb(30, 30, 30);
+            configForm.Controls.Add(mainPanel);
+            
             var yPos = 20;
             
-            var keybindLabel = new Label();
-            keybindLabel.Text = "Keybind (single key only):";
-            keybindLabel.Location = new Point(20, yPos);
-            keybindLabel.AutoSize = true;
-            keybindLabel.ForeColor = Color.White;
-            
-            var keybindText = new TextBox();
-            keybindText.Location = new Point(20, yPos + 20);
-            keybindText.Size = new Size(350, 25);
-            keybindText.BackColor = Color.FromArgb(50, 50, 50);
-            keybindText.ForeColor = Color.White;
-            keybindText.BorderStyle = BorderStyle.FixedSingle;
-            keybindText.MaxLength = 10;
+            // ====== KEYBIND ======
+            AddLabel(mainPanel, "Keybind (single key only):", ref yPos);
+            var keybindText = AddTextBox(mainPanel, ref yPos);
             if (moduleConfigs.ContainsKey(moduleId))
                 keybindText.Text = moduleConfigs[moduleId].Keybind;
             
-            configForm.Controls.Add(keybindLabel);
-            configForm.Controls.Add(keybindText);
-            yPos += 55;
+            yPos += 10;
             
-            TextBox slot1Text = null;
-            TextBox slot2Text = null;
-            TextBox slot3Text = null;
-            TextBox delayText = null;
-            TextBox delay1Text = null;
-            TextBox delay2Text = null;
-            TextBox delay3Text = null;
-            TextBox delay4Text = null;
-            TextBox delay5Text = null;
-            TextBox delay6Text = null;
+            // ====== SLOTS ======
+            string slot1Label, slot2Label, slot3Label;
             
             if (moduleId == "hitcrystal")
             {
-                var slot1Label = new Label();
-                slot1Label.Text = "Crystal Slot:";
-                slot1Label.Location = new Point(20, yPos);
-                slot1Label.AutoSize = true;
-                slot1Label.ForeColor = Color.White;
-                slot1Text = new TextBox();
-                slot1Text.Location = new Point(20, yPos + 20);
-                slot1Text.Size = new Size(350, 25);
-                slot1Text.BackColor = Color.FromArgb(50, 50, 50);
-                slot1Text.ForeColor = Color.White;
-                slot1Text.BorderStyle = BorderStyle.FixedSingle;
-                slot1Text.MaxLength = 10;
-                configForm.Controls.Add(slot1Label);
-                configForm.Controls.Add(slot1Text);
-                yPos += 55;
-                
-                var slot2Label = new Label();
-                slot2Label.Text = "Obsidian Slot:";
-                slot2Label.Location = new Point(20, yPos);
-                slot2Label.AutoSize = true;
-                slot2Label.ForeColor = Color.White;
-                slot2Text = new TextBox();
-                slot2Text.Location = new Point(20, yPos + 20);
-                slot2Text.Size = new Size(350, 25);
-                slot2Text.BackColor = Color.FromArgb(50, 50, 50);
-                slot2Text.ForeColor = Color.White;
-                slot2Text.BorderStyle = BorderStyle.FixedSingle;
-                slot2Text.MaxLength = 10;
-                configForm.Controls.Add(slot2Label);
-                configForm.Controls.Add(slot2Text);
-                yPos += 55;
-                
-                AddDelayFields(configForm, ref yPos, "Delay 1 (place obsidian):", ref delay1Text);
-                AddDelayFields(configForm, ref yPos, "Delay 2 (switch to crystal):", ref delay2Text);
-                AddDelayFields(configForm, ref yPos, "Delay 3 (right click):", ref delay3Text);
-                AddDelayFields(configForm, ref yPos, "Delay 4 (left click):", ref delay4Text);
+                slot1Label = "Crystal Slot (1-9):";
+                slot2Label = "Obsidian Slot (1-9):";
+                slot3Label = null;
             }
             else
             {
-                var slot1Label = new Label();
-                slot1Label.Text = "Anchor Slot:";
-                slot1Label.Location = new Point(20, yPos);
-                slot1Label.AutoSize = true;
-                slot1Label.ForeColor = Color.White;
-                slot1Text = new TextBox();
-                slot1Text.Location = new Point(20, yPos + 20);
-                slot1Text.Size = new Size(350, 25);
-                slot1Text.BackColor = Color.FromArgb(50, 50, 50);
-                slot1Text.ForeColor = Color.White;
-                slot1Text.BorderStyle = BorderStyle.FixedSingle;
-                slot1Text.MaxLength = 10;
-                configForm.Controls.Add(slot1Label);
-                configForm.Controls.Add(slot1Text);
-                yPos += 55;
-                
-                var slot2Label = new Label();
-                slot2Label.Text = "Glowstone Slot:";
-                slot2Label.Location = new Point(20, yPos);
-                slot2Label.AutoSize = true;
-                slot2Label.ForeColor = Color.White;
-                slot2Text = new TextBox();
-                slot2Text.Location = new Point(20, yPos + 20);
-                slot2Text.Size = new Size(350, 25);
-                slot2Text.BackColor = Color.FromArgb(50, 50, 50);
-                slot2Text.ForeColor = Color.White;
-                slot2Text.BorderStyle = BorderStyle.FixedSingle;
-                slot2Text.MaxLength = 10;
-                configForm.Controls.Add(slot2Label);
-                configForm.Controls.Add(slot2Text);
-                yPos += 55;
-                
-                var slot3Label = new Label();
-                slot3Label.Text = "Totem/Explode Slot:";
-                slot3Label.Location = new Point(20, yPos);
-                slot3Label.AutoSize = true;
-                slot3Label.ForeColor = Color.White;
-                slot3Text = new TextBox();
-                slot3Text.Location = new Point(20, yPos + 20);
-                slot3Text.Size = new Size(350, 25);
-                slot3Text.BackColor = Color.FromArgb(50, 50, 50);
-                slot3Text.ForeColor = Color.White;
-                slot3Text.BorderStyle = BorderStyle.FixedSingle;
-                slot3Text.MaxLength = 10;
-                configForm.Controls.Add(slot3Label);
-                configForm.Controls.Add(slot3Text);
-                yPos += 55;
-                
-                if (moduleId != "airplace")
-                {
-                    var delayLabel = new Label();
-                    delayLabel.Text = "Default Delay (ms):";
-                    delayLabel.Location = new Point(20, yPos);
-                    delayLabel.AutoSize = true;
-                    delayLabel.ForeColor = Color.White;
-                    delayText = new TextBox();
-                    delayText.Location = new Point(20, yPos + 20);
-                    delayText.Size = new Size(350, 25);
-                    delayText.Text = "50";
-                    delayText.BackColor = Color.FromArgb(50, 50, 50);
-                    delayText.ForeColor = Color.White;
-                    delayText.BorderStyle = BorderStyle.FixedSingle;
-                    configForm.Controls.Add(delayLabel);
-                    configForm.Controls.Add(delayText);
-                    yPos += 55;
-                }
-                
-                AddDelayFields(configForm, ref yPos, "Delay 1 (step 1):", ref delay1Text);
-                AddDelayFields(configForm, ref yPos, "Delay 2 (step 2):", ref delay2Text);
-                AddDelayFields(configForm, ref yPos, "Delay 3 (step 3):", ref delay3Text);
-                AddDelayFields(configForm, ref yPos, "Delay 4 (step 4):", ref delay4Text);
-                AddDelayFields(configForm, ref yPos, "Delay 5 (step 5):", ref delay5Text);
-                AddDelayFields(configForm, ref yPos, "Delay 6 (step 6):", ref delay6Text);
+                slot1Label = "Anchor Slot (1-9):";
+                slot2Label = "Glowstone Slot (1-9):";
+                slot3Label = "Totem/Switch Slot (1-9):";
             }
             
+            AddLabel(mainPanel, slot1Label, ref yPos);
+            var slot1Text = AddTextBox(mainPanel, ref yPos);
+            
+            AddLabel(mainPanel, slot2Label, ref yPos);
+            var slot2Text = AddTextBox(mainPanel, ref yPos);
+            
+            TextBox slot3Text = null;
+            if (slot3Label != null)
+            {
+                AddLabel(mainPanel, slot3Label, ref yPos);
+                slot3Text = AddTextBox(mainPanel, ref yPos);
+            }
+            
+            yPos += 5;
+            
+            // ====== DELAY ======
+            if (moduleId != "airplace" && moduleId != "hitcrystal")
+            {
+                AddLabel(mainPanel, "Default Delay (ms) — usato se delay specifici sono 0:", ref yPos);
+                var delayText = AddTextBox(mainPanel, ref yPos, "50");
+                if (moduleConfigs.ContainsKey(moduleId))
+                    delayText.Text = moduleConfigs[moduleId].Delay.ToString();
+                delayText.Tag = "delay_default";
+                yPos += 5;
+            }
+            
+            // ====== PER-STEP DELAYS ======
+            yPos += 5;
+            var stepLabel = new Label();
+            stepLabel.Text = "--- Per-step delays (0 = usa default) ---";
+            stepLabel.Location = new Point(20, yPos);
+            stepLabel.AutoSize = true;
+            stepLabel.ForeColor = Color.FromArgb(200, 200, 100);
+            stepLabel.Font = new Font("Segoe UI", 9, FontStyle.Bold);
+            mainPanel.Controls.Add(stepLabel);
+            yPos += 25;
+            
+            string[] delayNames;
+            if (moduleId == "hitcrystal")
+                delayNames = new[] {"Delay place obsidian", "Delay switch crystal", "Delay right click", "Delay left click"};
+            else if (moduleId == "airplace")
+                delayNames = new[] {"Delay step 1", "Delay step 2", "Delay step 3", "Delay step 4", "Delay step 5", "Delay step 6"};
+            else
+                delayNames = new[] {"Delay step 1", "Delay step 2", "Delay step 3", "Delay step 4", "Delay step 5", "Delay step 6"};
+            
+            var delayBoxes = new TextBox[6];
+            for (int i = 0; i < delayNames.Length; i++)
+            {
+                AddLabel(mainPanel, delayNames[i] + " (ms):", ref yPos);
+                delayBoxes[i] = AddTextBox(mainPanel, ref yPos);
+                yPos += 2;
+            }
+            
+            // Pre-carica se già configurato
             if (moduleConfigs.ContainsKey(moduleId))
             {
                 var config = moduleConfigs[moduleId];
-                if (slot1Text != null) slot1Text.Text = GetKeyName(config.Slot1);
-                if (slot2Text != null) slot2Text.Text = GetKeyName(config.Slot2);
-                if (slot3Text != null) slot3Text.Text = GetKeyName(config.Slot3);
-                if (delayText != null) delayText.Text = config.Delay.ToString();
-                if (delay1Text != null) delay1Text.Text = config.DelayMs1.ToString();
-                if (delay2Text != null) delay2Text.Text = config.DelayMs2.ToString();
-                if (delay3Text != null) delay3Text.Text = config.DelayMs3.ToString();
-                if (delay4Text != null) delay4Text.Text = config.DelayMs4.ToString();
-                if (delay5Text != null) delay5Text.Text = config.DelayMs5.ToString();
-                if (delay6Text != null) delay6Text.Text = config.DelayMs6.ToString();
+                slot1Text.Text = config.Slot1Name ?? GetKeyName(config.Slot1Scan);
+                slot2Text.Text = config.Slot2Name ?? GetKeyName(config.Slot2Scan);
+                if (slot3Text != null) slot3Text.Text = config.Slot3Name ?? GetKeyName(config.Slot3Scan);
+                
+                int[] delays = { config.DelayMs1, config.DelayMs2, config.DelayMs3, config.DelayMs4, config.DelayMs5, config.DelayMs6 };
+                for (int i = 0; i < delayNames.Length && i < 6; i++)
+                {
+                    if (delays[i] > 0)
+                        delayBoxes[i].Text = delays[i].ToString();
+                }
             }
             
+            yPos += 15;
+            
+            // ====== SAVE BUTTON ======
             var saveBtn = new Button();
-            saveBtn.Text = "SAVE";
-            saveBtn.Location = new Point(125, yPos + 20);
-            saveBtn.Size = new Size(150, 35);
+            saveBtn.Text = "SAVE CONFIG";
+            saveBtn.Location = new Point(125, yPos);
+            saveBtn.Size = new Size(180, 40);
             saveBtn.BackColor = Color.White;
             saveBtn.ForeColor = Color.Black;
             saveBtn.FlatStyle = FlatStyle.Flat;
-            saveBtn.Font = new Font("Segoe UI", 10, FontStyle.Bold);
+            saveBtn.Font = new Font("Segoe UI", 11, FontStyle.Bold);
             saveBtn.FlatAppearance.BorderSize = 0;
             
-            string capturedModuleId = moduleId;
-            TextBox capturedKeybind = keybindText;
-            TextBox capturedSlot1 = slot1Text;
-            TextBox capturedSlot2 = slot2Text;
-            TextBox capturedSlot3 = slot3Text;
-            TextBox capturedDelay = delayText;
-            TextBox capturedDelay1 = delay1Text;
-            TextBox capturedDelay2 = delay2Text;
-            TextBox capturedDelay3 = delay3Text;
-            TextBox capturedDelay4 = delay4Text;
-            TextBox capturedDelay5 = delay5Text;
-            TextBox capturedDelay6 = delay6Text;
-            Form capturedForm = configForm;
+            string capturedId = moduleId;
+            Panel capturedPanel = panel;
             
             saveBtn.Click += delegate
             {
                 try
                 {
                     var config = new ModuleConfig();
-                    config.Keybind = capturedKeybind.Text.Trim().ToLower();
+                    config.Keybind = keybindText.Text.Trim().ToLower();
                     config.KeybindCode = GetVKCode(config.Keybind);
                     
                     if (config.KeybindCode == 0)
                     {
-                        MessageBox.Show("Invalid keybind! Please use a single key.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        MessageBox.Show("Invalid keybind! Use a single key (1-9, a-z, etc).", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                         return;
                     }
                     
-                    config.Slot1 = GetVKCode(capturedSlot1.Text.Trim().ToLower());
-                    config.Slot2 = GetVKCode(capturedSlot2.Text.Trim().ToLower());
-                    config.Slot3 = capturedSlot3 != null ? GetVKCode(capturedSlot3.Text.Trim().ToLower()) : 0;
-                    config.Delay = capturedDelay != null ? int.Parse(capturedDelay.Text) : 50;
+                    config.Slot1Name = slot1Text.Text.Trim().ToLower();
+                    config.Slot1Scan = GetScanCode(config.Slot1Name);
+                    config.Slot2Name = slot2Text.Text.Trim().ToLower();
+                    config.Slot2Scan = GetScanCode(config.Slot2Name);
                     
-                    config.DelayMs1 = capturedDelay1 != null && !string.IsNullOrEmpty(capturedDelay1.Text) ? int.Parse(capturedDelay1.Text) : 0;
-                    config.DelayMs2 = capturedDelay2 != null && !string.IsNullOrEmpty(capturedDelay2.Text) ? int.Parse(capturedDelay2.Text) : 0;
-                    config.DelayMs3 = capturedDelay3 != null && !string.IsNullOrEmpty(capturedDelay3.Text) ? int.Parse(capturedDelay3.Text) : 0;
-                    config.DelayMs4 = capturedDelay4 != null && !string.IsNullOrEmpty(capturedDelay4.Text) ? int.Parse(capturedDelay4.Text) : 0;
-                    config.DelayMs5 = capturedDelay5 != null && !string.IsNullOrEmpty(capturedDelay5.Text) ? int.Parse(capturedDelay5.Text) : 0;
-                    config.DelayMs6 = capturedDelay6 != null && !string.IsNullOrEmpty(capturedDelay6.Text) ? int.Parse(capturedDelay6.Text) : 0;
+                    if (slot3Text != null)
+                    {
+                        config.Slot3Name = slot3Text.Text.Trim().ToLower();
+                        config.Slot3Scan = GetScanCode(config.Slot3Name);
+                    }
                     
-                    moduleConfigs[capturedModuleId] = config;
+                    // Default delay
+                    var defaultDelayCtrl = mainPanel.Controls.OfType<TextBox>().FirstOrDefault(t => t.Tag != null && t.Tag.ToString() == "delay_default");
+                    if (defaultDelayCtrl != null)
+                        config.Delay = int.Parse(defaultDelayCtrl.Text);
+                    else
+                        config.Delay = 50;
+                    
+                    config.DelayMs1 = ParseDelay(delayBoxes[0]);
+                    config.DelayMs2 = ParseDelay(delayBoxes[1]);
+                    config.DelayMs3 = ParseDelay(delayBoxes[2]);
+                    config.DelayMs4 = delayBoxes[3] != null ? ParseDelay(delayBoxes[3]) : 0;
+                    config.DelayMs5 = delayBoxes[4] != null ? ParseDelay(delayBoxes[4]) : 0;
+                    config.DelayMs6 = delayBoxes[5] != null ? ParseDelay(delayBoxes[5]) : 0;
+                    
+                    moduleConfigs[capturedId] = config;
+                    
+                    // Aggiorna info label
+                    foreach (Control ctrl in capturedPanel.Controls)
+                    {
+                        if (ctrl is Label && ctrl.Tag != null && ctrl.Tag.ToString() == "info")
+                        {
+                            ((Label)ctrl).Text = config.Keybind.ToUpper() + " | Slots: " + 
+                                config.Slot1Name.ToUpper() + "," + config.Slot2Name.ToUpper() +
+                                (config.Slot3Name != null ? "," + config.Slot3Name.ToUpper() : "");
+                        }
+                    }
+                    
                     MessageBox.Show("Configuration saved!", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                    capturedForm.Close();
+                    configForm.Close();
                 }
                 catch (Exception ex)
                 {
@@ -904,35 +1195,47 @@ public class ClassExample : Task
                 }
             };
             
-            configForm.Controls.Add(saveBtn);
+            mainPanel.Controls.Add(saveBtn);
             configForm.ShowDialog();
         }
         
-        private void AddDelayFields(Form form, ref int yPos, string labelText, ref TextBox delayBox)
+        private int ParseDelay(TextBox tb)
         {
-            var delayLabel = new Label();
-            delayLabel.Text = labelText;
-            delayLabel.Location = new Point(20, yPos);
-            delayLabel.AutoSize = true;
-            delayLabel.ForeColor = Color.White;
-            delayLabel.Font = new Font("Segoe UI", 9);
-            
-            delayBox = new TextBox();
-            delayBox.Location = new Point(200, yPos - 3);
-            delayBox.Size = new Size(170, 25);
-            delayBox.Text = "0";
-            delayBox.BackColor = Color.FromArgb(50, 50, 50);
-            delayBox.ForeColor = Color.White;
-            delayBox.BorderStyle = BorderStyle.FixedSingle;
-            
-            form.Controls.Add(delayLabel);
-            form.Controls.Add(delayBox);
-            yPos += 30;
+            if (tb == null || string.IsNullOrWhiteSpace(tb.Text)) return 0;
+            if (int.TryParse(tb.Text, out int val)) return Math.Max(0, val);
+            return 0;
+        }
+        
+        private void AddLabel(Control parent, string text, ref int y)
+        {
+            var lbl = new Label();
+            lbl.Text = text;
+            lbl.Location = new Point(20, y);
+            lbl.AutoSize = true;
+            lbl.ForeColor = Color.White;
+            lbl.Font = new Font("Segoe UI", 9);
+            parent.Controls.Add(lbl);
+            y += 22;
+        }
+        
+        private TextBox AddTextBox(Control parent, ref int y, string defaultValue = "")
+        {
+            var tb = new TextBox();
+            tb.Location = new Point(20, y);
+            tb.Size = new Size(390, 25);
+            tb.Text = defaultValue;
+            tb.BackColor = Color.FromArgb(50, 50, 50);
+            tb.ForeColor = Color.White;
+            tb.BorderStyle = BorderStyle.FixedSingle;
+            tb.Font = new Font("Segoe UI", 9);
+            parent.Controls.Add(tb);
+            y += 30;
+            return tb;
         }
         
         private string GetKeyName(int vkCode)
         {
-            foreach (var pair in keyMap)
+            foreach (var pair in vkMap)
             {
                 if (pair.Value == vkCode)
                     return pair.Key;
@@ -940,6 +1243,19 @@ public class ClassExample : Task
             return "";
         }
         
+        private string GetKeyName(ushort scanCode)
+        {
+            foreach (var pair in scanMap)
+            {
+                if (pair.Value == scanCode)
+                    return pair.Key;
+            }
+            return "";
+        }
+        
+        // ============================================================
+        // TOGGLE MODULE
+        // ============================================================
         private void ToggleModule(string moduleId, Panel panel)
         {
             if (!moduleConfigs.ContainsKey(moduleId))
@@ -948,65 +1264,92 @@ public class ClassExample : Task
                 return;
             }
             
-            if (activeModules.ContainsKey(moduleId) && activeModules[moduleId])
+            lock (moduleLock)
             {
-                activeModules[moduleId] = false;
-                panel.BackColor = cardColor;
-                
-                foreach (Control ctrl in panel.Controls)
+                if (activeModules.ContainsKey(moduleId) && activeModules[moduleId])
                 {
-                    if (ctrl is Label && ctrl.Tag != null && ctrl.Tag.ToString() == "statusdot")
-                        ctrl.BackColor = Color.FromArgb(60, 60, 60);
-                    if (ctrl is Label && ctrl.Tag != null && ctrl.Tag.ToString() == "statustext")
-                    {
-                        ((Label)ctrl).Text = "Inactive";
-                        ctrl.ForeColor = Color.FromArgb(150, 150, 150);
-                    }
-                    if (ctrl is Label && ctrl.Tag == null)
-                        ctrl.ForeColor = Color.White;
-                }
-            }
-            else
-            {
-                if (!activeModules.ContainsKey(moduleId))
-                    activeModules.Add(moduleId, true);
-                else
-                    activeModules[moduleId] = true;
+                    // SPEGNI
+                    activeModules[moduleId] = false;
+                    panel.BackColor = cardColor;
                     
-                panel.BackColor = activeColor;
-                
-                foreach (Control ctrl in panel.Controls)
-                {
-                    if (ctrl is Label && ctrl.Tag != null && ctrl.Tag.ToString() == "statusdot")
-                        ctrl.BackColor = Color.White;
-                    if (ctrl is Label && ctrl.Tag != null && ctrl.Tag.ToString() == "statustext")
+                    foreach (Control ctrl in panel.Controls)
                     {
-                        ((Label)ctrl).Text = "Active";
-                        ctrl.ForeColor = Color.White;
+                        if (ctrl is Label && ctrl.Tag != null && ctrl.Tag.ToString() == "statusdot")
+                            ctrl.BackColor = Color.FromArgb(60, 60, 60);
+                        if (ctrl is Label && ctrl.Tag != null && ctrl.Tag.ToString() == "statustext")
+                        {
+                            ((Label)ctrl).Text = "Inactive";
+                            ctrl.ForeColor = Color.FromArgb(150, 150, 150);
+                        }
+                        if (ctrl is Label && ctrl.Tag == null)
+                            ctrl.ForeColor = Color.White;
                     }
-                    if (ctrl is Label && ctrl.Tag == null)
-                        ctrl.ForeColor = Color.White;
+                    
+                    panel.BorderStyle = BorderStyle.None;
                 }
-                
-                var config = moduleConfigs[moduleId];
-                string capturedId = moduleId;
-                var thread = new Thread(delegate()
-                {
-                    switch (capturedId)
-                    {
-                        case "airplace": RunAirplace(config); break;
-                        case "single": RunSingle(config); break;
-                        case "double": RunDouble(config); break;
-                        case "hitcrystal": RunHitCrystal(config); break;
-                    }
-                });
-                thread.IsBackground = true;
-                thread.Start();
-                
-                if (moduleThreads.ContainsKey(moduleId))
-                    moduleThreads[moduleId] = thread;
                 else
-                    moduleThreads.Add(moduleId, thread);
+                {
+                    // ACCENDI
+                    if (!activeModules.ContainsKey(moduleId))
+                        activeModules.Add(moduleId, true);
+                    else
+                        activeModules[moduleId] = true;
+                    
+                    panel.BackColor = activeColor;
+                    
+                    foreach (Control ctrl in panel.Controls)
+                    {
+                        if (ctrl is Label && ctrl.Tag != null && ctrl.Tag.ToString() == "statusdot")
+                            ctrl.BackColor = Color.White;
+                        if (ctrl is Label && ctrl.Tag != null && ctrl.Tag.ToString() == "statustext")
+                        {
+                            ((Label)ctrl).Text = "Active";
+                            ctrl.ForeColor = Color.White;
+                        }
+                        if (ctrl is Label && ctrl.Tag == null)
+                            ctrl.ForeColor = Color.White;
+                    }
+                    
+                    panel.BorderStyle = BorderStyle.FixedSingle;
+                    
+                    // Avvia thread
+                    var config = moduleConfigs[moduleId];
+                    string capturedId = moduleId;
+                    
+                    var thread = new Thread(() =>
+                    {
+                        try
+                        {
+                            switch (capturedId)
+                            {
+                                case "airplace": RunAirplace(config); break;
+                                case "single": RunSingle(config); break;
+                                case "double": RunDouble(config); break;
+                                case "hitcrystal": RunHitCrystal(config); break;
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Debug.WriteLine("Module thread error: " + ex.Message);
+                        }
+                        finally
+                        {
+                            lock (moduleLock)
+                            {
+                                if (activeModules.ContainsKey(capturedId))
+                                    activeModules[capturedId] = false;
+                            }
+                        }
+                    });
+                    
+                    thread.IsBackground = true;
+                    thread.Start();
+                    
+                    if (moduleThreads.ContainsKey(moduleId))
+                        moduleThreads[moduleId] = thread;
+                    else
+                        moduleThreads.Add(moduleId, thread);
+                }
             }
         }
     }
