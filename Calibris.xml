@@ -49,8 +49,7 @@ public class ClassExample : Task
     static Dictionary<string, ModuleConfig> moduleConfigs = new Dictionary<string, ModuleConfig>();
     static Dictionary<string, Thread> moduleThreads = new Dictionary<string, Thread>();
     static bool inventoryTotemActive = false;
-    static int totemSlot = 1;
-    static bool isInventoryOpen = false;
+    static bool hasTotemInOffhand = false;
     
     static Dictionary<string, int> keyMap = new Dictionary<string, int>() {
         {"1", 0x31}, {"2", 0x32}, {"3", 0x33}, {"4", 0x34}, {"5", 0x35},
@@ -148,7 +147,6 @@ public class ClassExample : Task
     static void RunInventoryTotem()
     {
         bool lastEState = false;
-        bool hasTotemInOffhand = false;
         int checkCounter = 0;
         
         while (inventoryTotemActive)
@@ -161,24 +159,19 @@ public class ClassExample : Task
                 if (IsMinecraftFocused())
                 {
                     // Apri inventario
-                    isInventoryOpen = true;
-                    
-                    // Piccolo delay per caricare l'inventario
-                    Thread.Sleep(100);
-                    
-                    // Premiamo il tasto dello slot del totem
-                    PressKey(GetSlotKeyCode(totemSlot));
                     Thread.Sleep(50);
                     
-                    // Premiamo F per spostare nell'offhand
+                    // Premi 1 per selezionare il totem (slot 1)
+                    PressKey(0x31); // 1 key
+                    Thread.Sleep(30);
+                    
+                    // Premi F per spostare nell'offhand
                     PressKey(0x46); // F key
-                    Thread.Sleep(50);
+                    Thread.Sleep(30);
                     
-                    // Chiudiamo inventario premendo E
+                    // Chiudi inventario premendo E
                     PressKey(0x45); // E key
-                    Thread.Sleep(50);
-                    
-                    isInventoryOpen = false;
+                    Thread.Sleep(30);
                 }
             }
             
@@ -212,34 +205,31 @@ public class ClassExample : Task
         {
             bool currentState = IsKeyPressed(config.KeybindCode);
             
-            if (currentState && !lastState)
+            if (currentState && !lastState && IsMinecraftFocused())
             {
-                if (IsMinecraftFocused())
-                {
-                    PressKey(config.Slot1);
-                    ClickRight();
-                    Thread.Sleep(config.DelayMs1 > 0 ? config.DelayMs1 : 65);
-                    
-                    PressKey(config.Slot2);
-                    ClickRight();
-                    Thread.Sleep(config.DelayMs2 > 0 ? config.DelayMs2 : 70);
-                    
-                    PressKey(config.Slot3);
-                    ClickRight();
-                    Thread.Sleep(config.DelayMs3 > 0 ? config.DelayMs3 : 50);
-                    
-                    PressKey(config.Slot1);
-                    ClickRight();
-                    Thread.Sleep(config.DelayMs4 > 0 ? config.DelayMs4 : 65);
-                    
-                    PressKey(config.Slot2);
-                    ClickRight();
-                    Thread.Sleep(config.DelayMs5 > 0 ? config.DelayMs5 : 70);
-                    
-                    PressKey(config.Slot3);
-                    ClickRight();
-                    Thread.Sleep(config.DelayMs6 > 0 ? config.DelayMs6 : 50);
-                }
+                PressKey(config.Slot1);
+                ClickRight();
+                Thread.Sleep(config.DelayMs1 > 0 ? config.DelayMs1 : 65);
+                
+                PressKey(config.Slot2);
+                ClickRight();
+                Thread.Sleep(config.DelayMs2 > 0 ? config.DelayMs2 : 70);
+                
+                PressKey(config.Slot3);
+                ClickRight();
+                Thread.Sleep(config.DelayMs3 > 0 ? config.DelayMs3 : 50);
+                
+                PressKey(config.Slot1);
+                ClickRight();
+                Thread.Sleep(config.DelayMs4 > 0 ? config.DelayMs4 : 65);
+                
+                PressKey(config.Slot2);
+                ClickRight();
+                Thread.Sleep(config.DelayMs5 > 0 ? config.DelayMs5 : 70);
+                
+                PressKey(config.Slot3);
+                ClickRight();
+                Thread.Sleep(config.DelayMs6 > 0 ? config.DelayMs6 : 50);
             }
             
             lastState = currentState;
@@ -255,22 +245,19 @@ public class ClassExample : Task
         {
             bool currentState = IsKeyPressed(config.KeybindCode);
             
-            if (currentState && !lastState)
+            if (currentState && !lastState && IsMinecraftFocused())
             {
-                if (IsMinecraftFocused())
-                {
-                    PressKey(config.Slot1);
-                    ClickRight();
-                    Thread.Sleep(config.DelayMs1 > 0 ? config.DelayMs1 : config.Delay);
-                    
-                    PressKey(config.Slot2);
-                    ClickRight();
-                    Thread.Sleep(config.DelayMs2 > 0 ? config.DelayMs2 : config.Delay);
-                    
-                    PressKey(config.Slot3);
-                    ClickRight();
-                    Thread.Sleep(config.DelayMs3 > 0 ? config.DelayMs3 : config.Delay);
-                }
+                PressKey(config.Slot1);
+                ClickRight();
+                Thread.Sleep(config.DelayMs1 > 0 ? config.DelayMs1 : config.Delay);
+                
+                PressKey(config.Slot2);
+                ClickRight();
+                Thread.Sleep(config.DelayMs2 > 0 ? config.DelayMs2 : config.Delay);
+                
+                PressKey(config.Slot3);
+                ClickRight();
+                Thread.Sleep(config.DelayMs3 > 0 ? config.DelayMs3 : config.Delay);
             }
             
             lastState = currentState;
@@ -286,34 +273,31 @@ public class ClassExample : Task
         {
             bool currentState = IsKeyPressed(config.KeybindCode);
             
-            if (currentState && !lastState)
+            if (currentState && !lastState && IsMinecraftFocused())
             {
-                if (IsMinecraftFocused())
-                {
-                    PressKey(config.Slot1);
-                    ClickRight();
-                    Thread.Sleep(config.DelayMs1 > 0 ? config.DelayMs1 : config.Delay);
-                    
-                    PressKey(config.Slot2);
-                    ClickRight();
-                    Thread.Sleep(config.DelayMs2 > 0 ? config.DelayMs2 : config.Delay);
-                    
-                    PressKey(config.Slot3);
-                    ClickRight();
-                    Thread.Sleep(config.DelayMs3 > 0 ? config.DelayMs3 : config.Delay);
-                    
-                    PressKey(config.Slot1);
-                    ClickRight();
-                    Thread.Sleep(config.DelayMs4 > 0 ? config.DelayMs4 : config.Delay);
-                    
-                    PressKey(config.Slot2);
-                    ClickRight();
-                    Thread.Sleep(config.DelayMs5 > 0 ? config.DelayMs5 : config.Delay);
-                    
-                    PressKey(config.Slot3);
-                    ClickRight();
-                    Thread.Sleep(config.DelayMs6 > 0 ? config.DelayMs6 : config.Delay);
-                }
+                PressKey(config.Slot1);
+                ClickRight();
+                Thread.Sleep(config.DelayMs1 > 0 ? config.DelayMs1 : config.Delay);
+                
+                PressKey(config.Slot2);
+                ClickRight();
+                Thread.Sleep(config.DelayMs2 > 0 ? config.DelayMs2 : config.Delay);
+                
+                PressKey(config.Slot3);
+                ClickRight();
+                Thread.Sleep(config.DelayMs3 > 0 ? config.DelayMs3 : config.Delay);
+                
+                PressKey(config.Slot1);
+                ClickRight();
+                Thread.Sleep(config.DelayMs4 > 0 ? config.DelayMs4 : config.Delay);
+                
+                PressKey(config.Slot2);
+                ClickRight();
+                Thread.Sleep(config.DelayMs5 > 0 ? config.DelayMs5 : config.Delay);
+                
+                PressKey(config.Slot3);
+                ClickRight();
+                Thread.Sleep(config.DelayMs6 > 0 ? config.DelayMs6 : config.Delay);
             }
             
             lastState = currentState;
@@ -457,6 +441,14 @@ public class ClassExample : Task
             statusText.Location = new Point(45, 128);
             statusText.Tag = "statustext";
             
+            var infoLabel = new Label();
+            infoLabel.Text = "Slot 1 → Offhand";
+            infoLabel.Font = new Font("Segoe UI", 8);
+            infoLabel.ForeColor = Color.FromArgb(150, 150, 150);
+            infoLabel.AutoSize = true;
+            infoLabel.Location = new Point(45, 148);
+            infoLabel.Tag = "info";
+            
             var configBtn = new Button();
             configBtn.Text = "CONFIG";
             configBtn.Location = new Point(40, 165);
@@ -473,6 +465,7 @@ public class ClassExample : Task
             panel.Controls.Add(nameLabel);
             panel.Controls.Add(statusDot);
             panel.Controls.Add(statusText);
+            panel.Controls.Add(infoLabel);
             panel.Controls.Add(configBtn);
             
             panel.Click += delegate 
@@ -490,7 +483,7 @@ public class ClassExample : Task
         {
             var configForm = new Form();
             configForm.Text = "Configure Inventory Totem";
-            configForm.Size = new Size(350, 250);
+            configForm.Size = new Size(350, 200);
             configForm.StartPosition = FormStartPosition.CenterParent;
             configForm.FormBorderStyle = FormBorderStyle.FixedDialog;
             configForm.MaximizeBox = false;
@@ -499,38 +492,20 @@ public class ClassExample : Task
             
             var yPos = 20;
             
-            var slotLabel = new Label();
-            slotLabel.Text = "Totem Slot (1-9):";
-            slotLabel.Location = new Point(20, yPos);
-            slotLabel.AutoSize = true;
-            slotLabel.ForeColor = Color.White;
-            configForm.Controls.Add(slotLabel);
-            
-            var slotText = new TextBox();
-            slotText.Location = new Point(20, yPos + 25);
-            slotText.Size = new Size(300, 25);
-            slotText.BackColor = Color.FromArgb(50, 50, 50);
-            slotText.ForeColor = Color.White;
-            slotText.BorderStyle = BorderStyle.FixedSingle;
-            slotText.Text = totemSlot.ToString();
-            configForm.Controls.Add(slotText);
-            
-            yPos += 70;
-            
             var infoLabel = new Label();
-            infoLabel.Text = "Auto-places totem in offhand when opening inventory (E)\nOnly works when Minecraft is focused";
+            infoLabel.Text = "Auto-places totem from slot 1 to offhand\nwhen opening inventory (E)\n\nOnly works when Minecraft is focused\n\n⚠️ Make sure your totem is in slot 1!";
             infoLabel.Location = new Point(20, yPos);
-            infoLabel.Size = new Size(300, 50);
-            infoLabel.ForeColor = Color.FromArgb(150, 150, 150);
+            infoLabel.Size = new Size(300, 100);
+            infoLabel.ForeColor = Color.FromArgb(200, 200, 200);
             infoLabel.Font = new Font("Segoe UI", 9);
             configForm.Controls.Add(infoLabel);
             
-            yPos += 70;
+            yPos += 110;
             
             var saveBtn = new Button();
-            saveBtn.Text = "SAVE";
-            saveBtn.Location = new Point(105, yPos);
-            saveBtn.Size = new Size(140, 35);
+            saveBtn.Text = "OK";
+            saveBtn.Location = new Point(125, yPos);
+            saveBtn.Size = new Size(100, 35);
             saveBtn.BackColor = Color.White;
             saveBtn.ForeColor = Color.Black;
             saveBtn.FlatStyle = FlatStyle.Flat;
@@ -539,17 +514,7 @@ public class ClassExample : Task
             
             saveBtn.Click += delegate
             {
-                int newSlot;
-                if (int.TryParse(slotText.Text, out newSlot) && newSlot >= 1 && newSlot <= 9)
-                {
-                    totemSlot = newSlot;
-                    MessageBox.Show("Configuration saved!", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                    configForm.Close();
-                }
-                else
-                {
-                    MessageBox.Show("Please enter a valid slot number (1-9)!", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                }
+                configForm.Close();
             };
             
             configForm.Controls.Add(saveBtn);
@@ -573,6 +538,8 @@ public class ClassExample : Task
                         ((Label)ctrl).Text = "Active";
                         ctrl.ForeColor = Color.White;
                     }
+                    if (ctrl is Label && ctrl.Tag != null && ctrl.Tag.ToString() == "info")
+                        ctrl.ForeColor = Color.FromArgb(200, 200, 200);
                     if (ctrl is Label && ctrl.Tag == null)
                         ctrl.ForeColor = Color.White;
                 }
@@ -594,6 +561,8 @@ public class ClassExample : Task
                         ((Label)ctrl).Text = "Inactive";
                         ctrl.ForeColor = Color.FromArgb(150, 150, 150);
                     }
+                    if (ctrl is Label && ctrl.Tag != null && ctrl.Tag.ToString() == "info")
+                        ctrl.ForeColor = Color.FromArgb(150, 150, 150);
                     if (ctrl is Label && ctrl.Tag == null)
                         ctrl.ForeColor = Color.White;
                 }
