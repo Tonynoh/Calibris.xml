@@ -1,4 +1,4 @@
-#<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <Target Name="Main">
     <ClassExample />
   </Target>
@@ -37,9 +37,6 @@ public class ClassExample : Task
     [DllImport("user32.dll")]
     static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
     
-    [DllImport("user32.dll")]
-    static extern short GetKeyState(int nVirtKey);
-    
     const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
     const uint MOUSEEVENTF_LEFTUP = 0x0004;
     const uint MOUSEEVENTF_RIGHTDOWN = 0x0008;
@@ -51,10 +48,8 @@ public class ClassExample : Task
     static Dictionary<string, ModuleConfig> moduleConfigs = new Dictionary<string, ModuleConfig>();
     static Dictionary<string, Thread> moduleThreads = new Dictionary<string, Thread>();
     static bool inventoryTotemActive = false;
-    static int inventoryKeyCode = 0x45; // E di default
+    static int inventoryKeyCode = 0x45;
     static int totemSlot = 1;
-    static bool totemPlaced = false;
-    static int lastTotemCheck = 0;
     
     static Dictionary<string, int> keyMap = new Dictionary<string, int>() {
         {"1", 0x31}, {"2", 0x32}, {"3", 0x33}, {"4", 0x34}, {"5", 0x35},
@@ -149,43 +144,6 @@ public class ClassExample : Task
         return 0;
     }
     
-    static void RunInventoryTotem()
-    {
-        bool lastState = false;
-        bool inventoryJustOpened = false;
-        int frameCounter = 0;
-        
-        while (inventoryTotemActive)
-        {
-            bool currentState = IsKeyPressed(inventoryKeyCode);
-            
-            // Detecta quando l'inventario viene aperto (transizione da rilasciato a premuto)
-            if (currentState && !lastState)
-            {
-                if (IsMinecraftFocused())
-                {
-                    // Aspetta che l'inventario si apra completamente
-                    Thread.Sleep(80);
-                    
-                    // Seleziona lo slot del totem
-                    PressKey(GetSlotKeyCode(totemSlot));
-                    Thread.Sleep(30);
-                    
-                    // Premi F per spostare in offhand
-                    PressKey(0x46); // F key
-                    Thread.Sleep(30);
-                    
-                    // Chiudi l'inventario
-                    PressKey(inventoryKeyCode);
-                    Thread.Sleep(30);
-                }
-            }
-            
-            lastState = currentState;
-            Thread.Sleep(10);
-        }
-    }
-    
     static int GetSlotKeyCode(int slot)
     {
         switch(slot)
@@ -200,6 +158,33 @@ public class ClassExample : Task
             case 8: return 0x38;
             case 9: return 0x39;
             default: return 0x31;
+        }
+    }
+    
+    static void RunInventoryTotem()
+    {
+        bool lastState = false;
+        
+        while (inventoryTotemActive)
+        {
+            bool currentState = IsKeyPressed(inventoryKeyCode);
+            
+            if (currentState && !lastState)
+            {
+                if (IsMinecraftFocused())
+                {
+                    Thread.Sleep(80);
+                    PressKey(GetSlotKeyCode(totemSlot));
+                    Thread.Sleep(30);
+                    PressKey(0x46);
+                    Thread.Sleep(30);
+                    PressKey(inventoryKeyCode);
+                    Thread.Sleep(30);
+                }
+            }
+            
+            lastState = currentState;
+            Thread.Sleep(10);
         }
     }
     
@@ -592,7 +577,6 @@ public class ClassExample : Task
                 inventoryKeyCode = code;
                 totemSlot = newSlot;
                 
-                // Update UI
                 foreach (Control ctrl in panel.Controls)
                 {
                     if (ctrl is Label && ctrl.Tag != null && ctrl.Tag.ToString() == "invkey")
